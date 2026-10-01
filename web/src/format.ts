@@ -30,6 +30,8 @@ export function clock(iso: string): string {
   });
 }
 
+export const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
 export function fmtNum(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(n >= 10_000 ? 0 : 1)}k`;
@@ -48,23 +50,13 @@ export function modelTier(model: string | null): "opus" | "sonnet" | "haiku" | "
 }
 
 export function modelLabel(model: string | null): string {
-  if (!model) return "—";
+  if (!model) return "sin modelo";
   const m = /claude-(opus|sonnet|haiku|fable)-([\d-]+)/i.exec(model);
   if (!m) return model;
   const ver = m[2].split("-").filter((x) => x.length <= 2).join(".");
   return `${m[1][0].toUpperCase()}${m[1].slice(1)} ${ver}`;
 }
 
-export function agentGlyph(agentType: string | null, kind: "main" | "subagent"): string {
-  if (kind === "main") return "◆";
-  const t = (agentType ?? "").toLowerCase();
-  if (t.includes("explore")) return "⌕";
-  if (t.includes("plan")) return "▤";
-  if (t.includes("review") || t.includes("qa") || t.includes("test")) return "✓";
-  if (t.includes("research")) return "◎";
-  if (t.includes("design") || t.includes("ui")) return "✎";
-  return "●";
-}
 
 export function agentLabel(a: { kind: "main" | "subagent"; name: string | null; agentType: string | null }): string {
   if (a.kind === "main") return "Claude (principal)";

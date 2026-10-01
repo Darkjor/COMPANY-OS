@@ -47,10 +47,10 @@ function App() {
     <>
       <nav className="top">
         <a href="#/" className="brand">
-          <span className="brand-mark" /> COMPANY OS
+          <span className="brand-mark" aria-hidden />
+          Company OS
         </a>
-        <span className="top-sub">observador · solo lectura</span>
-        <span className="live-pill"><span className="dot dot-working" /> en vivo</span>
+        <span className="top-sub">observador de solo lectura</span>
       </nav>
       <main className="wrap">
         <ErrorBoundary resetKey={hash}>

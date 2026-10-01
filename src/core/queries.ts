@@ -1,4 +1,4 @@
-import { IDLE_AFTER_MS } from "./config.ts";
+import { IDLE_AFTER_MS, WAITING_TTL_MS } from "./config.ts";
 import type { DB } from "./db.ts";
 import { classifySession, type Department } from "./departments.ts";
 import { listDepartmentFiles, resolveProject, type VaultEntry, type VaultProject } from "./vault.ts";
@@ -103,10 +103,13 @@ export const hottest = (list: Status[]): Status =>
 /** Derive status from the last event only — the transcript is the single source of truth. */
 export function deriveStatus(last: LastEvent | undefined, lastAt: string | null, now: number, finished: boolean): Status {
   if (finished) return "done";
-  if (!last || !lastAt || now - Date.parse(lastAt) > IDLE_AFTER_MS) return "idle";
+  if (!last || !lastAt) return "idle";
+  const age = now - Date.parse(lastAt);
+  // A turn that ended (or was interrupted) is waiting on the human, for much longer than "working" stays fresh.
+  const turnEnded = last.kind === "text" || (last.kind === "prompt" && last.summary.startsWith("[Request interrupted"));
+  if (turnEnded) return age > WAITING_TTL_MS ? "idle" : "waiting";
+  if (age > IDLE_AFTER_MS) return "idle";
   if (last.kind === "error") return "error";
-  if (last.kind === "text") return "waiting";
-  if (last.kind === "prompt" && last.summary.startsWith("[Request interrupted")) return "waiting";
   return "working";
 }
 
@@ -130,8 +133,13 @@ function buildAgents(db: DB, sessionId: string, tokens: Map<string, Tokens>, now
   const rows = db.prepare("SELECT * FROM agents WHERE session_id = ? ORDER BY started_at").all(sessionId) as unknown as AgentRow[];
   const owner = db.prepare("SELECT agent_id FROM events WHERE tool_use_id = ? AND kind = 'tool_use' LIMIT 1");
   const returned = db.prepare("SELECT 1 FROM events WHERE tool_use_id = ? AND kind IN ('tool_result','error') LIMIT 1");
+  // "What is it doing" skips noise like bare tool results and thinking blocks.
+  const action = db.prepare(
+    "SELECT summary FROM events WHERE agent_id = ? AND kind IN ('tool_use','text','prompt','error') ORDER BY ts DESC, id DESC LIMIT 1",
+  );
   return rows.map((r) => {
     const last = lastEvent(db, r.id);
+    const doing = action.get(r.id) as { summary: string } | undefined;
     const finished = r.kind === "subagent" && !!r.spawn_tool_use_id && !!returned.get(r.spawn_tool_use_id);
     const parent = r.spawn_tool_use_id ? (owner.get(r.spawn_tool_use_id) as { agent_id: string } | undefined) : undefined;
     return {
@@ -144,7 +152,7 @@ function buildAgents(db: DB, sessionId: string, tokens: Map<string, Tokens>, now
       parentId: parent?.agent_id ?? (r.kind === "subagent" ? sessionId : null),
       spawnDepth: r.spawn_depth,
       status: deriveStatus(last, r.last_event_at, now, finished),
-      current: last?.summary ?? null,
+      current: doing?.summary ?? last?.summary ?? null,
       lastEventAt: r.last_event_at,
       tokens: tokens.get(r.id) ?? ZERO,
     };

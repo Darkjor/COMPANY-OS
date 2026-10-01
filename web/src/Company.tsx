@@ -1,120 +1,101 @@
 import { useState } from "react";
-import { projectHref, useLive, useNow, type Overview, type ProjectView, type SessionView } from "./api.ts";
-import { DeptStrip } from "./DeptStrip.tsx";
-import { STATUS_LABEL, fmtNum, freshTokens, modelLabel, modelTier, timeAgo } from "./format.ts";
+import { projectHref, useLive, useNow, type Overview, type ProjectView } from "./api.ts";
+import { STATUS_LABEL, fmtNum, freshTokens, plural, timeAgo } from "./format.ts";
+import { NeedsYou, collectCalls } from "./NeedsYou.tsx";
+import { LIVE, Room, deptCode } from "./Office.tsx";
 
-const LIVE = new Set(["working", "subagents", "waiting", "error"]);
+const RANGES = [
+  { days: 7, label: "7 días" },
+  { days: 30, label: "30 días" },
+  { days: 365, label: "Año" },
+];
 
 export function Company() {
   const [days, setDays] = useState(30);
   const { data, error } = useLive<Overview>(`/api/overview?days=${days}`);
   const now = useNow();
-  const [onlyLive, setOnlyLive] = useState(false);
 
-  if (error && !data) return <div className="empty">No hay conexión con el observador: {error}</div>;
-  if (!data) return <div className="empty">Cargando la empresa…</div>;
+  if (error && !data) return <div className="empty">Sin conexión con el observador. ¿Está corriendo <span className="mono">npm start</span>? ({error})</div>;
+  if (!data) return <div className="empty">Abriendo la oficina…</div>;
 
   const sessions = data.projects.flatMap((p) => p.sessions);
-  const working = sessions.filter((s) => s.status === "working" || s.status === "subagents").length;
-  const waiting = sessions.filter((s) => s.status === "waiting").length;
-  const agentsNow = sessions.reduce((n, s) => n + s.activeAgents, 0);
-  const projects = onlyLive ? data.projects.filter((p) => LIVE.has(p.status)) : data.projects;
+  const working = sessions.reduce((n, s) => n + (s.status === "working" || s.status === "subagents" ? Math.max(1, s.activeAgents) : 0), 0);
+  const calls = collectCalls(data.projects);
+  const live = data.projects.filter((p) => p.sessions.some((s) => LIVE.has(s.status)));
+  const archive = data.projects.filter((p) => !live.includes(p));
 
   return (
     <>
-      <section className="stats">
-        <Stat label="Agentes trabajando" value={String(agentsNow)} accent="working" />
-        <Stat label="Sesiones activas" value={String(working)} />
-        <Stat label="Esperándote" value={String(waiting)} accent={waiting ? "waiting" : undefined} />
-        <Stat label="Tokens hoy" value={fmtNum(freshTokens(data.tokensToday))} hint={`+${fmtNum(data.tokensToday.cacheRead)} de caché`} />
-        <Stat label="Proyectos" value={String(data.projects.length)} hint={`últimos ${days} días`} />
-      </section>
+      <div className="hud" role="status">
+        <span className="hud-item hud-work"><b>{working}</b> trabajando</span>
+        <span className={`hud-item ${calls.length ? "hud-call" : ""}`}><b>{calls.length}</b> te esperan</span>
+        <span className="hud-item"><b>{live.length}</b> salas activas</span>
+        <span className="hud-item hud-tokens" title={`${fmtNum(data.tokensToday.cacheRead)} tokens leídos de caché`}>
+          <b>{fmtNum(freshTokens(data.tokensToday))}</b> tokens hoy
+        </span>
+      </div>
 
-      <div className="toolbar">
-        <div className="seg">
-          <button className={!onlyLive ? "on" : ""} onClick={() => setOnlyLive(false)}>Todos</button>
-          <button className={onlyLive ? "on" : ""} onClick={() => setOnlyLive(true)}>Solo activos</button>
+      <NeedsYou calls={calls} now={now} working={working} />
+
+      <h2 className="section-label">El piso</h2>
+      {live.length === 0 ? (
+        <p className="floor-empty">Ninguna sala encendida. Cuando un agente empiece a trabajar, su proyecto aparece aquí.</p>
+      ) : (
+        <div className="rooms">
+          {live.map((p) => (
+            <Room
+              key={p.key}
+              name={p.name}
+              href={projectHref(p.key)}
+              departments={p.departments}
+              sessions={p.sessions}
+              now={now}
+              meta={`${STATUS_LABEL[p.status]} · ${timeAgo(p.lastEventAt, now)}`}
+            />
+          ))}
         </div>
-        <div className="seg">
-          {[1, 7, 30, 365].map((d) => (
-            <button key={d} className={days === d ? "on" : ""} onClick={() => setDays(d)}>
-              {d === 1 ? "Hoy" : d === 365 ? "Año" : `${d} d`}
+      )}
+
+      <div className="section-row">
+        <h2 className="section-label">Archivo</h2>
+        <div className="range" role="group" aria-label="Rango de actividad">
+          {RANGES.map((r) => (
+            <button key={r.days} aria-pressed={days === r.days} onClick={() => setDays(r.days)}>
+              {r.label}
             </button>
           ))}
         </div>
       </div>
-
-      {projects.length === 0 ? (
-        <div className="empty">Ningún proyecto con actividad en este rango.</div>
+      {archive.length === 0 ? (
+        <p className="muted small">Nada más en este rango.</p>
       ) : (
-        <section className="rooms">
-          {projects.map((p) => (
-            <Room key={p.key} project={p} now={now} />
+        <ul className="ledger">
+          {archive.map((p) => (
+            <LedgerRow key={p.key} p={p} now={now} />
           ))}
-        </section>
+        </ul>
       )}
     </>
   );
 }
 
-function Stat({ label, value, hint, accent }: { label: string; value: string; hint?: string; accent?: string }) {
-  return (
-    <div className={`stat ${accent ? `stat-${accent}` : ""}`}>
-      <div className="stat-value">{value}</div>
-      <div className="stat-label">{label}</div>
-      {hint && <div className="stat-hint">{hint}</div>}
-    </div>
-  );
-}
-
-function Room({ project, now }: { project: ProjectView; now: number }) {
-  const [open, setOpen] = useState(false);
-  const shown = open ? project.sessions : project.sessions.slice(0, 3);
-  return (
-    <article className={`room room-${project.status}`}>
-      <header className="room-head">
-        <span className={`dot dot-${project.status}`} title={STATUS_LABEL[project.status]} />
-        <a href={projectHref(project.key)} className="room-title"><h2>{project.name}</h2></a>
-        {!project.mapped && <span className="tag" title="Este proyecto no tiene PROYECTO.md en el vault">sin vault</span>}
-        <span className="room-meta">{timeAgo(project.lastEventAt, now)}</span>
-      </header>
-      <DeptStrip departments={project.departments} href={projectHref(project.key)} />
-      {project.sessions.length === 0 && <div className="muted small room-empty">Sin sesiones de agentes todavía.</div>}
-      <ul className="sessions">
-        {shown.map((s) => (
-          <SessionRow key={s.id} s={s} now={now} />
-        ))}
-      </ul>
-      {project.sessions.length > 3 && (
-        <button className="more" onClick={() => setOpen(!open)}>
-          {open ? "Mostrar menos" : `+${project.sessions.length - 3} sesiones`}
-        </button>
-      )}
-      <footer className="room-foot">
-        <span>{project.sessions.length} sesiones</span>
-        <span>hoy {fmtNum(freshTokens(project.tokensToday))} tokens</span>
-      </footer>
-    </article>
-  );
-}
-
-function SessionRow({ s, now }: { s: SessionView; now: number }) {
-  const live = LIVE.has(s.status);
+function LedgerRow({ p, now }: { p: ProjectView; now: number }) {
   return (
     <li>
-      <a className={`session ${live ? "session-live" : ""}`} href={`#/s/${s.id}`}>
-        <span className={`dot dot-${s.status}`} />
-        <div className="session-body">
-          <div className="session-title">
-            {s.title ?? "Sesión sin título"}
-            {s.activeAgents > 1 && <span className="crowd">{s.activeAgents} agentes</span>}
-          </div>
-          {live && s.current && <div className="session-current">{s.current}</div>}
-        </div>
-        <div className="session-side">
-          <span className={`chip chip-${modelTier(s.model)}`}>{modelLabel(s.model)}</span>
-          <span className="muted">{timeAgo(s.lastEventAt, now)}</span>
-        </div>
+      <a className="ledger-row" href={projectHref(p.key)}>
+        <span className="ledger-name">
+          {p.name}
+          {!p.mapped && <span className="tag" title="Sin PROYECTO.md en el vault">sin ficha</span>}
+        </span>
+        <span className="pips" aria-label="Departamentos con sesiones">
+          {p.departments.map((d) => (
+            <span key={d.slug} className={`pip ${d.sessions ? "pip-on" : ""}`} title={`${d.name}: ${d.sessions} sesiones`}>
+              {deptCode(d.name)}
+            </span>
+          ))}
+        </span>
+        <span className="ledger-num">{plural(p.sessions.length, "sesión", "sesiones")}</span>
+        <span className="ledger-num">{timeAgo(p.lastEventAt, now)}</span>
       </a>
     </li>
   );

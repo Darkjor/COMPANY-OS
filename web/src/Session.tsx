@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
 import { projectHref, useLive, useNow, type AgentView, type EventRow, type SessionDetail } from "./api.ts";
+import { Drone, Worker } from "./pixel/Sprites.tsx";
 import {
   STATUS_LABEL,
-  agentGlyph,
   agentLabel,
   clock,
   fmtNum,
@@ -43,7 +43,7 @@ export function Session({ id }: { id: string }) {
     <>
       <a className="back" href={projectHref(project.key)}>← {project.name}</a>
       <header className="detail-head">
-        <span className={`dot dot-lg dot-${s.status}`} />
+        <Worker seed={s.id} model={s.model} status={s.status === "subagents" ? "working" : s.status} scale={5} />
         <div>
           <div className="crumb">
             {project.name} · {s.department}
@@ -68,7 +68,13 @@ export function Session({ id }: { id: string }) {
                   style={{ paddingLeft: 10 + depth * 18 }}
                   onClick={() => setFocus(focus === agent.id ? null : agent.id)}
                 >
-                  <span className={`avatar avatar-${agent.status}`}>{agentGlyph(agent.agentType, agent.kind)}</span>
+                  {agent.kind === "main" ? (
+                    <Worker seed={s.id} model={agent.model} status={agent.status === "subagents" ? "working" : agent.status} scale={2} />
+                  ) : (
+                    <span className={`avatar avatar-${agent.status}`} title={agent.agentType ?? "subagente"}>
+                      <Drone scale={4} />
+                    </span>
+                  )}
                   <span className="agent-body">
                     <span className="agent-name">
                       {agentLabel(agent)}

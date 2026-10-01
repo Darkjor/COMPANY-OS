@@ -64,6 +64,10 @@ describe("deriveStatus", () => {
     expect(deriveStatus({ kind: "tool_use", summary: "Bash" }, "2026-09-30T09:00:00Z", now, false)).toBe("idle");
     expect(deriveStatus({ kind: "tool_use", summary: "Bash" }, recent, now, true)).toBe("done");
   });
+  it("keeps a finished turn waiting for the human well past the idle window", () => {
+    expect(deriveStatus({ kind: "text", summary: "listo" }, "2026-09-30T09:30:00Z", now, false)).toBe("waiting");
+    expect(deriveStatus({ kind: "text", summary: "listo" }, "2026-09-30T07:00:00Z", now, false)).toBe("idle");
+  });
 });
 
 describe("project mapping", () => {

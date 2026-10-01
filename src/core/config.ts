@@ -17,3 +17,5 @@ export const PORT = Number(process.env.COMPANY_OS_PORT ?? 4747);
 /** Status thresholds (ms). */
 export const WORKING_WINDOW_MS = 60_000;
 export const IDLE_AFTER_MS = 10 * 60_000;
+/** A finished turn keeps "waiting for you" this long before it is considered abandoned. */
+export const WAITING_TTL_MS = Number(process.env.COMPANY_OS_WAITING_TTL_MIN ?? 120) * 60_000;
