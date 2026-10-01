@@ -66,7 +66,7 @@ a.team-chip:hover { color: var(--text); box-shadow: inset 0 0 0 1px var(--sub); 
 .dl-more:hover { color: var(--text); box-shadow: inset 0 0 0 1px var(--line-strong); }
 .dl-empty { padding: 14px 6px; max-width: 64ch; color: var(--muted); }
 .dl-compact { margin: 0 0 22px; }
-.dl-compact .dl-row { grid-template-columns: 78px minmax(0, 1fr) 160px 120px; }
+.dl-compact .dl-row { grid-template-columns: 78px minmax(0, 1fr) 170px 150px 120px; }
 
 /* ---------- performance table (session screen) ---------- */
 .perf { margin: 0 0 22px; padding: 14px 14px 10px; background: var(--surface); box-shadow: inset 0 0 0 2px var(--line); clip-path: var(--notch); }
@@ -124,4 +124,8 @@ a.team-chip:hover { color: var(--text); box-shadow: inset 0 0 0 1px var(--sub); 
   .perf tbody, .perf tfoot, .perf tbody th, .perf tfoot th { display: block; }
   .perf tbody th, .perf tfoot th { border: 0; padding: 3px 4px 6px; font-weight: 600; }
   .perf tfoot { margin-top: 4px; border-top: 2px solid var(--line-strong); padding-top: 8px; }
+}
+@media (max-width: 760px) {
+  .detail, .reg-row { grid-template-columns: minmax(0, 1fr); }
+  .panel { min-width: 0; }
 }
