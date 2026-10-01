@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
-import { join, relative, resolve, sep } from "node:path";
+import { closeSync, existsSync, openSync, readFileSync, readSync, readdirSync, realpathSync, statSync } from "node:fs";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { log } from "./log.ts";
 
 export interface VaultProject {
@@ -119,15 +119,63 @@ export function listDepartmentFiles(vaultDir: string, project: VaultProject, dep
 const TEXT_EXT = /\.(md|txt|json|csv|ya?ml)$/i;
 const MAX_TEXT = 512 * 1024;
 
+/**
+ * Resolve a vault-relative path to a real file inside the vault, or null. Everything that can
+ * escape is refused BEFORE touching the filesystem (a UNC path would otherwise make Windows open
+ * a network connection): absolute paths, drive letters, UNC, `..`, `:` (alternate data streams),
+ * NUL bytes and hidden segments. Then the symlink-resolved path must still be inside the vault.
+ */
+export function safeVaultFile(vaultDir: string, relPath: string): string | null {
+  if (typeof relPath !== "string" || relPath.length === 0 || relPath.length > 1024) return null;
+  if (relPath.includes("\0") || relPath.includes(":") || isAbsolute(relPath)) return null;
+  if (/^[\\/]/.test(relPath)) return null;
+  const segs = relPath.split(/[\\/]+/);
+  if (segs.some((s) => s === ".." || s === "." || s.startsWith("."))) return null;
+  if (!TEXT_EXT.test(relPath)) return null;
+  try {
+    const root = realpathSync(vaultDir);
+    const target = resolve(root, relPath);
+    if (!existsSync(target)) return null;
+    const real = realpathSync(target);
+    const inside = (a: string, b: string) => (process.platform === "win32" ? a.toLowerCase().startsWith(b.toLowerCase()) : a.startsWith(b));
+    if (!inside(real, root + sep)) return null;
+    return statSync(real).isFile() ? real : null;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") log.warn(`lectura de vault rechazada (${relPath}): ${String(err)}`);
+    return null;
+  }
+}
+
 /** Safe read of a text file inside the vault (rejects path traversal and non-text files). */
 export function readVaultText(vaultDir: string, relPath: string): { path: string; content: string } | null {
-  if (!TEXT_EXT.test(relPath)) return null;
-  const root = realpathSync(vaultDir);
-  const target = resolve(root, relPath);
-  if (!existsSync(target)) return null;
-  const real = realpathSync(target);
-  if (real !== root && !real.startsWith(root + sep)) return null;
-  const st = statSync(real);
-  if (!st.isFile() || st.size > MAX_TEXT) return null;
+  const real = safeVaultFile(vaultDir, relPath);
+  if (!real || statSync(real).size > MAX_TEXT) return null;
   return { path: relPath, content: readFileSync(real, "utf8") };
+}
+
+const headCache = new Map<string, string>();
+
+/** First 4 KB of a vault text file (for titles); null if unavailable. Cached by path + mtime. */
+export function readVaultHead(vaultDir: string, relPath: string, bytes = 4096): string | null {
+  const real = safeVaultFile(vaultDir, relPath);
+  if (!real) return null;
+  try {
+    const st = statSync(real);
+    const key = `${real}:${st.mtimeMs}:${bytes}`;
+    const hit = headCache.get(key);
+    if (hit !== undefined) return hit;
+    const buf = Buffer.alloc(Math.min(bytes, st.size));
+    const fd = openSync(real, "r");
+    try {
+      readSync(fd, buf, 0, buf.length, 0);
+    } finally {
+      closeSync(fd);
+    }
+    const text = buf.toString("utf8");
+    if (headCache.size > 500) headCache.clear();
+    headCache.set(key, text);
+    return text;
+  } catch {
+    return null;
+  }
 }
