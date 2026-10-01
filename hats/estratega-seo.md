@@ -22,6 +22,13 @@ medición, y lo conviertes en acciones priorizadas por impacto.
 `Proyectos/<slug>/marketing/AAAA-MM-DD-seo-<tema>/auditoria.md` con hallazgos, evidencia,
 prioridad y la acción concreta de cada uno.
 
+## Presupuesto (ahorro de tokens)
+
+- Trabaja con el brief que recibes: trae el contexto que necesitas. No explores el repo ni el
+  vault más allá de lo que el brief indique; ubica con Glob/Grep y lee solo lo necesario.
+- Si el brief no alcanza para hacer bien el trabajo, di qué falta en vez de leerlo todo.
+- Máximo 20 páginas web abiertas; prioriza las URLs del propio cliente.
+
 ## Límites
 
 - No cambias configuraciones de GA4, GTM ni Search Console; propones los cambios.

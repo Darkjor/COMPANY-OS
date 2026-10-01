@@ -21,6 +21,13 @@ mantenibles en el repo del proyecto.
 El código va en el repo. Decisiones de arquitectura o de datos que deban sobrevivir a la sesión:
 `Proyectos/<slug>/desarrollo/AAAA-MM-DD-<tema>/notas.md`.
 
+## Presupuesto (ahorro de tokens)
+
+- Trabaja con el brief que recibes: trae el contexto que necesitas. No explores el repo ni el
+  vault más allá de lo que el brief indique; ubica con Glob/Grep y lee solo lo necesario.
+- Si el brief no alcanza para hacer bien el trabajo, di qué falta en vez de leerlo todo.
+- Lee solo los archivos que vas a tocar y sus dependencias directas; corre tests acotados a lo que cambias.
+
 ## Límites
 
 - Nada en producción (migraciones, deploys, borrado de datos, cambios de RLS) sin aprobación

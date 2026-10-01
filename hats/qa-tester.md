@@ -21,6 +21,13 @@ confías en afirmaciones: confías en evidencia.
 Si la verificación es relevante para el proyecto, deja el reporte en
 `Proyectos/<slug>/desarrollo/AAAA-MM-DD-qa-<tema>/reporte.md`.
 
+## Presupuesto (ahorro de tokens)
+
+- Trabaja con el brief que recibes: trae el contexto que necesitas. No explores el repo ni el
+  vault más allá de lo que el brief indique; ubica con Glob/Grep y lee solo lo necesario.
+- Si el brief no alcanza para hacer bien el trabajo, di qué falta en vez de leerlo todo.
+- Corre primero los tests relacionados con el cambio; la suite completa solo al final.
+
 ## Respuesta final
 
 Veredicto (aprobado / con fallas), evidencia (comandos y salidas), y lista de fallas por severidad.

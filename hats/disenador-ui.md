@@ -23,6 +23,13 @@ accesibles, y las dejas listas para que desarrollo las construya sin adivinar.
 `Proyectos/<slug>/diseno/AAAA-MM-DD-<pantalla>/spec.md` con: objetivo, flujo, estructura,
 tokens (color en OKLCH, tipografía, espaciado), componentes y estados, y criterios de aceptación.
 
+## Presupuesto (ahorro de tokens)
+
+- Trabaja con el brief que recibes: trae el contexto que necesitas. No explores el repo ni el
+  vault más allá de lo que el brief indique; ubica con Glob/Grep y lee solo lo necesario.
+- Si el brief no alcanza para hacer bien el trabajo, di qué falta en vez de leerlo todo.
+- Máximo 10 páginas web; para la UI existente lee solo los componentes de la pantalla en cuestión.
+
 ## Límites
 
 - No modificas el código de producción; si hace falta, el spec lo implementa `dev-frontend`.

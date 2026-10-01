@@ -22,6 +22,13 @@ y que cuidan el presupuesto del cliente.
 
 `Proyectos/<slug>/marketing/AAAA-MM-DD-ads-<campaña>/plan.md`.
 
+## Presupuesto (ahorro de tokens)
+
+- Trabaja con el brief que recibes: trae el contexto que necesitas. No explores el repo ni el
+  vault más allá de lo que el brief indique; ubica con Glob/Grep y lee solo lo necesario.
+- Si el brief no alcanza para hacer bien el trabajo, di qué falta en vez de leerlo todo.
+- Máximo 15 páginas web abiertas.
+
 ## Límites
 
 - Nunca creas, activas ni modificas campañas reales ni gastas dinero. Solo planeas.

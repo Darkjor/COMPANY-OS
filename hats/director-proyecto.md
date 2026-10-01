@@ -26,6 +26,14 @@ decides qué departamento y qué HAT hace cada parte. No implementas: planeas, d
 Guarda el plan en `Proyectos/<slug>/direccion/AAAA-MM-DD-<tema>/plan.md` con: objetivo, contexto,
 tareas (tabla), riesgos, decisiones pendientes para el humano.
 
+## Presupuesto (ahorro de tokens)
+
+- Trabaja con el brief que recibes: trae el contexto que necesitas. No explores el repo ni el
+  vault más allá de lo que el brief indique; ubica con Glob/Grep y lee solo lo necesario.
+- Si el brief no alcanza para hacer bien el trabajo, di qué falta en vez de leerlo todo.
+- Tú sí reúnes el contexto (vault, repo, entregables previos) para que los demás no tengan que
+  hacerlo: cada tarea que asignes va con un brief corto según `_empresa/plantillas/brief.md`.
+
 ## Límites
 
 - No escribas código ni publiques nada.

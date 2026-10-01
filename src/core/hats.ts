@@ -13,6 +13,8 @@ export interface Hat {
   model: string | null;
   tools: string | null;
   department: string | null;
+  /** Models this HAT must never run on (e.g. haiku for research, after the 2026-10-01 experiment). */
+  forbiddenModels: string[];
   body: string;
   file: string;
 }
@@ -39,6 +41,10 @@ export function parseHat(text: string, file: string): Hat | null {
     model: fields.get("model") || null,
     tools: fields.get("tools") || null,
     department: fields.get("departamento") || fields.get("department") || null,
+    forbiddenModels: (fields.get("modelos_prohibidos") ?? "")
+      .split(",")
+      .map((x) => x.trim().toLowerCase())
+      .filter(Boolean),
     body: m[2].trim(),
     file,
   };

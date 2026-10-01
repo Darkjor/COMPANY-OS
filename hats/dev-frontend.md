@@ -22,6 +22,13 @@ repo del proyecto, respetando su stack y convenciones.
 El código va en el repo. Si tomas una decisión técnica que debe sobrevivir a la sesión,
 anótala en `Proyectos/<slug>/desarrollo/AAAA-MM-DD-<tema>/notas.md`.
 
+## Presupuesto (ahorro de tokens)
+
+- Trabaja con el brief que recibes: trae el contexto que necesitas. No explores el repo ni el
+  vault más allá de lo que el brief indique; ubica con Glob/Grep y lee solo lo necesario.
+- Si el brief no alcanza para hacer bien el trabajo, di qué falta en vez de leerlo todo.
+- Lee solo los archivos que vas a tocar y sus dependencias directas; corre tests acotados a lo que cambias.
+
 ## Límites
 
 - No hagas deploy, no cambies variables de entorno de producción, no hagas push sin que el
