@@ -22,3 +22,6 @@ export const WORKING_WINDOW_MS = 60_000;
 export const IDLE_AFTER_MS = 10 * 60_000;
 /** A finished turn keeps "waiting for you" this long before it is considered abandoned. */
 export const WAITING_TTL_MS = Number(process.env.COMPANY_OS_WAITING_TTL_MIN ?? 120) * 60_000;
+
+/** Claude Code agent teams (read-only): one folder per team with its config.json. */
+export const TEAMS_DIR = process.env.COMPANY_OS_TEAMS_DIR ?? join(homedir(), ".claude", "teams");

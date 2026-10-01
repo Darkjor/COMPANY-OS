@@ -3,13 +3,14 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
-import { CLAUDE_PROJECTS_DIR, DB_PATH, PORT, VAULT_DIR } from "../core/config.ts";
+import { CLAUDE_PROJECTS_DIR, DB_PATH, PORT, TEAMS_DIR, VAULT_DIR } from "../core/config.ts";
 import { openDb } from "../core/db.ts";
 import { ingestAll } from "../core/ingest.ts";
 import { log } from "../core/log.ts";
 import { loadDepartments } from "../core/departments.ts";
 import { hatDepartments } from "../core/hats.ts";
 import { type Ctx } from "../core/queries.ts";
+import { loadTeams } from "../core/teams.ts";
 import { loadVaultProjects } from "../core/vault.ts";
 import { createApp, type Listener } from "./app.ts";
 import { startWatcher } from "./watcher.ts";
@@ -30,6 +31,7 @@ function ctx(): Ctx {
         vault: loadVaultProjects(VAULT_DIR),
         departments: loadDepartments(VAULT_DIR),
         hats: hatDepartments(join(VAULT_DIR, "_empresa", "hats")),
+        teams: loadTeams(TEAMS_DIR),
       },
     };
   }

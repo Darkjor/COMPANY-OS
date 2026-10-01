@@ -3,6 +3,7 @@ import type { DB } from "./db.ts";
 import { classifySession, type Department } from "./departments.ts";
 import { latestDeliverable, listDeliverables, type Deliverable } from "./deliverables.ts";
 import { freshHookState, hookStates, REASON_LABEL, turnStartOf, type HookReason } from "./hooks.ts";
+import { buildTeam, type TeamConfig, type TeamView } from "./teams.ts";
 import { listDepartmentFiles, resolveProject, type VaultEntry, type VaultProject } from "./vault.ts";
 
 /** Everything read from the vault that queries need (reloaded by the server every few seconds). */
@@ -12,6 +13,8 @@ export interface Ctx {
   departments: Department[];
   /** HAT name → department slug (from the vault's HAT library). */
   hats: Map<string, string>;
+  /** Agent teams read from ~/.claude/teams (optional: tests and callers without teams omit it). */
+  teams?: TeamConfig[];
 }
 
 export type Status = "working" | "waiting" | "subagents" | "error" | "idle" | "done";
@@ -82,6 +85,8 @@ export interface SessionView {
   statusSource: "hooks" | "transcript";
   /** Last deliverable the session wrote in its current turn; null if none. */
   deliverable: Deliverable | null;
+  /** Set on the LEAD session of an agent team (teammates are linked by agent id, name or hook labels). */
+  team: TeamView | null;
 }
 
 export interface DeptSummary {
@@ -204,7 +209,7 @@ function buildAgents(db: DB, sessionId: string, tokens: Map<string, Tokens>, now
     let finished = !background && !!result;
     if (background) {
       const taskId = r.id.slice(sessionId.length + 1).replace(/^agent-/, "");
-      const n = notified.get(sessionId, r.spawn_tool_use_id ?? " ", taskId) as { ts: string | null } | undefined;
+      const n = notified.get(sessionId, r.spawn_tool_use_id ?? "-", taskId) as { ts: string | null } | undefined;
       // A later transcript event means the agent was resumed after that notification.
       finished = !!n?.ts && n.ts >= (r.last_event_at ?? "");
     }
@@ -245,7 +250,7 @@ interface SessionRow {
   agent_setting: string | null;
 }
 
-function toSessionView(db: DB, row: SessionRow, agents: AgentView[], ctx: Ctx): SessionView {
+function toSessionView(db: DB, row: SessionRow, agents: AgentView[], ctx: Ctx, now = Date.now()): SessionView {
   const main = agents.find((a) => a.kind === "main");
   const subs = agents.filter((a) => a.kind === "subagent");
   const activeSubs = subs.filter((a) => a.status === "working").length;
@@ -264,6 +269,7 @@ function toSessionView(db: DB, row: SessionRow, agents: AgentView[], ctx: Ctx): 
     status = "waiting";
     kind = asking.waitingKind;
   } else if (activeSubs > 0 && status !== "error") status = "subagents";
+  const teamCfg = ctx.teams?.find((t) => t.leadSessionId === row.id);
   const deliverable = latestDeliverable(db, ctx.vaultDir, row.id, turnStartOf(db, row.id, hookStates(db, row.id).get("")));
   if (status === "waiting" && kind === null) kind = deliverable ? "delivered" : "finished"; // transcript fallback
   if (status !== "waiting") kind = null;
@@ -293,6 +299,7 @@ function toSessionView(db: DB, row: SessionRow, agents: AgentView[], ctx: Ctx): 
     waitingLabel: waitingKind ? REASON_LABEL[waitingKind] : null,
     statusSource: source,
     deliverable,
+    team: teamCfg ? buildTeam(db, teamCfg, row.id, agents, ctx.hats, now) : null,
   };
 }
 
@@ -333,7 +340,7 @@ export function overview(db: DB, ctx: Ctx, days = 30, now = Date.now()) {
   let today = ZERO;
   for (const s of sessions) {
     const agents = buildAgents(db, s.id, allTokens, now, ctx.hats);
-    const view = toSessionView(db, s, agents, ctx);
+    const view = toSessionView(db, s, agents, ctx, now);
     const pk = resolveProject(ctx.vault, s.cwd, s.project_dir);
     let p = projects.get(pk.key);
     if (!p) {
@@ -401,7 +408,7 @@ export function sessionDetail(db: DB, ctx: Ctx, sessionId: string, limit = 300, 
     )
     .all(sessionId);
   return {
-    session: toSessionView(db, row, agents, ctx),
+    session: toSessionView(db, row, agents, ctx, now),
     project: resolveProject(ctx.vault, row.cwd, row.project_dir),
     agents,
     events,

@@ -36,6 +36,8 @@ export interface HookRecord {
   agentType: string | null;
   teamName: string | null;
   teammateName: string | null;
+  /** TaskCreated / TaskCompleted only: the opaque task id (never its subject or description). */
+  taskId: string | null;
   /** Top-level key NAMES (no values) for events whose payload we are still studying. */
   payloadKeys: string[] | null;
 }
@@ -43,6 +45,7 @@ export interface HookRecord {
 const EVENT_RE = /^[A-Za-z]{1,40}$/;
 const SESSION_RE = /^[A-Za-z0-9_-]{1,100}$/;
 const STUDY_EVENTS = new Set(["TaskCreated", "TaskCompleted", "TeammateIdle"]);
+const TASK_EVENTS = new Set(["TaskCreated", "TaskCompleted"]);
 
 const clipStr = (v: unknown, max = 500): string | null =>
   typeof v === "string" && v.length > 0 && !v.includes("\0") ? v.slice(0, max) : null;
@@ -66,6 +69,7 @@ export function sanitizeHook(event: string, payload: unknown): HookRecord | null
     agentType: clipStr(payload.agent_type, 100),
     teamName: clipStr(payload.team_name, 200),
     teammateName: clipStr(payload.teammate_name, 200),
+    taskId: TASK_EVENTS.has(event) ? clipStr(payload.task_id, 100) : null,
     payloadKeys: STUDY_EVENTS.has(event) ? Object.keys(payload).slice(0, 40).map((k) => k.slice(0, 60)) : null,
   };
 }
@@ -129,12 +133,13 @@ export function transition(rec: HookRecord, prev: PrevState | null, delivered: b
 export function recordHook(db: DB, vaultDir: string, rec: HookRecord, ts: string): string {
   db.prepare(
     `INSERT INTO hook_events(ts, session_id, event, cwd, tool_name, file_path, notification_type,
-                             agent_id, agent_type, team_name, teammate_name, payload_keys)
-     VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
+                             agent_id, agent_type, team_name, teammate_name, payload_keys, task_id)
+     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
   ).run(
     ts, rec.sessionId, rec.event, rec.cwd, rec.toolName, rec.filePath, rec.notificationType,
     rec.agentId, rec.agentType, rec.teamName, rec.teammateName,
     rec.payloadKeys ? JSON.stringify(rec.payloadKeys) : null,
+    rec.taskId,
   );
 
   // Deliverable: a successful Write/Edit of a vault file (PostToolUse only = it really happened).

@@ -95,7 +95,8 @@ CREATE TABLE IF NOT EXISTS hook_events (
   agent_type        TEXT,
   team_name         TEXT,
   teammate_name     TEXT,
-  payload_keys      TEXT
+  payload_keys      TEXT,
+  task_id           TEXT             -- TaskCreated / TaskCompleted only (opaque id; subject and description are NOT kept)
 );
 CREATE INDEX IF NOT EXISTS idx_hook_events_session ON hook_events(session_id, ts);
 
@@ -121,7 +122,8 @@ CREATE TABLE IF NOT EXISTS deliverables (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   source     TEXT NOT NULL,        -- hook | transcript
-  agent_type TEXT                  -- HAT/subagent type that wrote it, when known
+  agent_type TEXT,                 -- HAT/subagent type that wrote it, when known
+  seen_at    TEXT                  -- when the human opened it (shared by monitor and phone)
 );
 CREATE INDEX IF NOT EXISTS idx_deliverables_session ON deliverables(session_id, updated_at);
 CREATE INDEX IF NOT EXISTS idx_deliverables_project ON deliverables(project, updated_at);
@@ -146,22 +148,23 @@ export function openDb(path: string): DB {
  * from transcripts once Claude Code cleans them up, so migrations must never drop or reset them.
  */
 function migrate(db: DB): void {
+  // Additive columns are checked on every open: hook_events / deliverables are never rebuilt.
+  addColumn(db, "sessions", "automated", "INTEGER NOT NULL DEFAULT 0");
+  addColumn(db, "sessions", "agent_setting", "TEXT");
+  addColumn(db, "agents", "request_shape", "TEXT");
+  addColumn(db, "hook_events", "task_id", "TEXT");
+  addColumn(db, "deliverables", "seen_at", "TEXT");
+
   const { user_version: v } = db.prepare("PRAGMA user_version").get() as { user_version: number };
   if (v >= SCHEMA_VERSION) return;
-  const cols = db.prepare("PRAGMA table_info(sessions)").all() as { name: string }[];
-  if (!cols.some((c) => c.name === "automated")) {
-    db.exec("ALTER TABLE sessions ADD COLUMN automated INTEGER NOT NULL DEFAULT 0");
-  }
-  if (!cols.some((c) => c.name === "agent_setting")) {
-    db.exec("ALTER TABLE sessions ADD COLUMN agent_setting TEXT");
-  }
-  const agentCols = db.prepare("PRAGMA table_info(agents)").all() as { name: string }[];
-  if (!agentCols.some((c) => c.name === "request_shape")) {
-    db.exec("ALTER TABLE agents ADD COLUMN request_shape TEXT");
-  }
   db.exec("UPDATE sessions SET automated = 0"); // v2 misdetected interactive sessions; recompute
-  db.exec("DELETE FROM ingest_state"); // re-ingest everything so old sessions get the new column right
+  db.exec("DELETE FROM ingest_state"); // re-ingest everything so old sessions get the new columns right
   db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+}
+
+function addColumn(db: DB, table: string, column: string, ddl: string): void {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  if (!cols.some((c) => c.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
 }
 
 export function tx<T>(db: DB, fn: () => T): T {

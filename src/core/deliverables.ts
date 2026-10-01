@@ -28,6 +28,8 @@ export interface Deliverable {
   sessionId: string;
   createdAt: string;
   source: "hook" | "transcript";
+  /** When the human opened it (ISO), shared by every device; null = never. Compare with `at` for edits after. */
+  seenAt: string | null;
 }
 
 export const DELIVERABLE_TOOLS: ReadonlySet<string> = new Set(["Write", "Edit", "MultiEdit"]);
@@ -104,6 +106,7 @@ interface Row {
   updated_at: string;
   source: "hook" | "transcript";
   agent_type: string | null;
+  seen_at: string | null;
   session_hat: string | null;
 }
 
@@ -130,7 +133,19 @@ function toView(r: Row, vaultDir: string): Deliverable {
     sessionId: r.session_id,
     createdAt: r.created_at,
     source: r.source,
+    seenAt: r.seen_at,
   };
+}
+
+/** Mark a deliverable as seen (idempotent; keeps the latest time). Null when the path is not a known deliverable. */
+export function markSeen(db: DB, path: string, ts: string): { seenAt: string; sessionId: string } | null {
+  const row = db.prepare("SELECT session_id, seen_at FROM deliverables WHERE path = ?").get(path) as
+    | { session_id: string; seen_at: string | null }
+    | undefined;
+  if (!row) return null;
+  const seenAt = row.seen_at && row.seen_at > ts ? row.seen_at : ts;
+  db.prepare("UPDATE deliverables SET seen_at = ? WHERE path = ?").run(seenAt, path);
+  return { seenAt, sessionId: row.session_id };
 }
 
 /** `project` accepts a slug or a project key (`vault:<slug>`). Newest first. */

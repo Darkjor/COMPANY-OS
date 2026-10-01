@@ -3,7 +3,7 @@ import { appendFileSync, existsSync, statSync } from "node:fs";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import type { DB } from "../core/db.ts";
-import { listDeliverables } from "../core/deliverables.ts";
+import { listDeliverables, markSeen } from "../core/deliverables.ts";
 import { recordHook, sanitizeHook } from "../core/hooks.ts";
 import { log } from "../core/log.ts";
 import { overview, projectDetail, sessionDetail, type Ctx } from "../core/queries.ts";
@@ -116,6 +116,28 @@ export function createApp(deps: AppDeps): Hono {
       limit: Number.isFinite(limit) ? limit : 100,
     });
     return c.json({ deliverables: list });
+  });
+
+  /** Shared "seen" mark: opening a deliverable on any device clears it on all of them. */
+  app.post("/api/deliverables/seen", async (c) => {
+    // Requiring JSON forces a CORS preflight, so another web page cannot fire this blindly.
+    if (!(c.req.header("content-type") ?? "").toLowerCase().startsWith("application/json")) {
+      return c.json({ error: "se espera application/json" }, 415);
+    }
+    let body: unknown = null;
+    try {
+      if (Number(c.req.header("content-length") ?? 0) <= 4096) body = await c.req.json();
+    } catch {
+      body = null;
+    }
+    const raw = body && typeof body === "object" ? (body as { path?: unknown }).path : null;
+    if (typeof raw !== "string" || raw.length === 0 || raw.length > 1024 || raw.includes("\u0000")) {
+      return c.json({ error: "path requerido" }, 400);
+    }
+    const seen = markSeen(db, raw.replace(/[\\]/g, "/"), new Date().toISOString());
+    if (!seen) return c.json({ error: "entregable desconocido" }, 404);
+    deps.notify?.([seen.sessionId]);
+    return c.json({ path: raw.replace(/[\\]/g, "/"), seenAt: seen.seenAt });
   });
 
   app.get("/api/vault/file", (c) => {
