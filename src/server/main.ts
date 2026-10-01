@@ -1,23 +1,22 @@
 import { randomBytes } from "node:crypto";
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
-import { Hono } from "hono";
-import { streamSSE } from "hono/streaming";
 import { CLAUDE_PROJECTS_DIR, DB_PATH, PORT, VAULT_DIR } from "../core/config.ts";
 import { openDb } from "../core/db.ts";
 import { ingestAll } from "../core/ingest.ts";
 import { log } from "../core/log.ts";
 import { loadDepartments } from "../core/departments.ts";
 import { hatDepartments } from "../core/hats.ts";
-import { overview, projectDetail, sessionDetail, type Ctx } from "../core/queries.ts";
-import { loadVaultProjects, readVaultText } from "../core/vault.ts";
+import { type Ctx } from "../core/queries.ts";
+import { loadVaultProjects } from "../core/vault.ts";
+import { createApp, type Listener } from "./app.ts";
 import { startWatcher } from "./watcher.ts";
 
 const db = openDb(DB_PATH);
 const t0 = Date.now();
-ingestAll(db, CLAUDE_PROJECTS_DIR);
+ingestAll(db, CLAUDE_PROJECTS_DIR, { vaultDir: VAULT_DIR });
 log.ok(`índice listo en ${Date.now() - t0} ms (${CLAUDE_PROJECTS_DIR})`);
 log.ok(`vault: ${VAULT_DIR}`);
 
@@ -37,91 +36,33 @@ function ctx(): Ctx {
   return ctxCache.ctx;
 }
 
-type Listener = (sessionIds: string[]) => void;
 const listeners = new Set<Listener>();
-startWatcher(db, CLAUDE_PROJECTS_DIR, (ids) => {
+const notify: Listener = (ids) => {
   for (const l of listeners) l(ids);
-});
+};
+startWatcher(db, CLAUDE_PROJECTS_DIR, notify, 3000, { vaultDir: VAULT_DIR });
 
-const app = new Hono();
-
-app.get("/api/overview", (c) => {
-  const days = Number(c.req.query("days") ?? 30);
-  return c.json(overview(db, ctx(), Number.isFinite(days) && days > 0 ? days : 30));
-});
-
-app.get("/api/projects/:key", (c) => {
-  const detail = projectDetail(db, ctx(), c.req.param("key"));
-  return detail ? c.json(detail) : c.json({ error: "not found" }, 404);
-});
-
-app.get("/api/sessions/:id", (c) => {
-  const detail = sessionDetail(db, ctx(), c.req.param("id"));
-  return detail ? c.json(detail) : c.json({ error: "not found" }, 404);
-});
-
-/**
- * Claude Code HTTP hooks → Company OS (phase: experiment). Contract from the hooks docs: always
- * answer 200 `{}` fast; a failure here must never block Claude. Token in the query string keeps
- * other local processes from injecting fake events.
- */
-const HOOK_TOKEN_FILE = join(import.meta.dirname, "..", "..", "data", "hook-token.txt");
-const HOOK_EVENTS_FILE = join(import.meta.dirname, "..", "..", "data", "hooks-events.ndjson");
+const DATA_DIR = join(import.meta.dirname, "..", "..", "data");
+const HOOK_TOKEN_FILE = join(DATA_DIR, "hook-token.txt");
 if (!existsSync(HOOK_TOKEN_FILE)) writeFileSync(HOOK_TOKEN_FILE, randomBytes(16).toString("hex"));
 const hookToken = readFileSync(HOOK_TOKEN_FILE, "utf8").trim();
 
-const clipDeep = (v: unknown): unknown => {
-  if (typeof v === "string") return v.length > 2000 ? v.slice(0, 2000) + "…[recortado]" : v;
-  if (Array.isArray(v)) return v.slice(0, 50).map(clipDeep);
-  if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, clipDeep(x)]));
-  return v;
-};
+// Raw payloads (prompts, commands, replies!) are only logged on purpose, and capped at 5 MB.
+const debugRaw = process.env.COMPANY_OS_HOOK_DEBUG === "1";
+if (debugRaw) log.warn("COMPANY_OS_HOOK_DEBUG=1: guardando payloads crudos de hooks en data/hooks-events.ndjson (máx. 5 MB)");
 
-app.post("/hooks/:event", async (c) => {
-  if (c.req.query("t") !== hookToken) return c.json({}, 403);
-  const receivedAt = new Date().toISOString();
-  let payload: unknown = null;
-  try {
-    payload = await c.req.json();
-  } catch (err) {
-    log.warn(`hook ${c.req.param("event")} sin JSON válido: ${String(err)}`);
-  }
-  try {
-    appendFileSync(HOOK_EVENTS_FILE, JSON.stringify({ receivedAt, event: c.req.param("event"), payload: clipDeep(payload) }) + "\n");
-  } catch (err) {
-    log.warn(`no se pudo guardar el evento de hook: ${String(err)}`);
-  }
-  return c.json({});
+const app = createApp({
+  db,
+  vaultDir: VAULT_DIR,
+  ctx,
+  hookToken,
+  notify,
+  subscribe: (l) => {
+    listeners.add(l);
+    return () => listeners.delete(l);
+  },
+  rawHookLog: debugRaw ? { file: join(DATA_DIR, "hooks-events.ndjson"), maxBytes: 5 * 1024 * 1024 } : null,
 });
-
-app.get("/api/vault/file", (c) => {
-  const path = c.req.query("path");
-  if (!path) return c.json({ error: "path requerido" }, 400);
-  try {
-    const file = readVaultText(VAULT_DIR, path);
-    return file ? c.json(file) : c.json({ error: "no disponible" }, 404);
-  } catch (err) {
-    log.warn(`lectura de vault falló (${path}): ${String(err)}`);
-    return c.json({ error: "no disponible" }, 404);
-  }
-});
-
-app.get("/api/stream", (c) =>
-  streamSSE(c, async (stream) => {
-    const listener: Listener = (ids) => {
-      void stream.writeSSE({ event: "changed", data: JSON.stringify(ids) });
-    };
-    listeners.add(listener);
-    stream.onAbort(() => {
-      listeners.delete(listener);
-    });
-    while (!stream.aborted) {
-      await stream.writeSSE({ event: "ping", data: "" });
-      await stream.sleep(15_000);
-    }
-    listeners.delete(listener);
-  }),
-);
 
 const dist = join(import.meta.dirname, "..", "..", "web", "dist");
 if (existsSync(dist)) {

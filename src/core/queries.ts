@@ -1,6 +1,8 @@
 import { IDLE_AFTER_MS, WAITING_TTL_MS } from "./config.ts";
 import type { DB } from "./db.ts";
 import { classifySession, type Department } from "./departments.ts";
+import { latestDeliverable, listDeliverables, type Deliverable } from "./deliverables.ts";
+import { freshHookState, hookStates, REASON_LABEL, turnStartOf, type HookReason } from "./hooks.ts";
 import { listDepartmentFiles, resolveProject, type VaultEntry, type VaultProject } from "./vault.ts";
 
 /** Everything read from the vault that queries need (reloaded by the server every few seconds). */
@@ -36,6 +38,10 @@ export interface AgentView {
   tokens: Tokens;
   /** Department of the agent's HAT; null for the main agent and for subagents without a HAT. */
   hatDepartment: string | null;
+  /** Why it waits (only when the state comes from hooks): permission | question | finished | delivered. */
+  waitingKind: HookReason | null;
+  /** Where `status` came from: official hooks, or inferred from the transcript. */
+  source: "hooks" | "transcript";
 }
 
 /** A live subagent wearing a HAT: it sits at its own department's desk in the office. */
@@ -68,6 +74,14 @@ export interface SessionView {
   crew: CrewMember[];
   /** Live subagents without a HAT (drawn as drones next to the main agent). */
   drones: number;
+  /** With status "waiting": permission | question | finished | delivered. Null otherwise. */
+  waitingKind: "permission" | "question" | "finished" | "delivered" | null;
+  /** Spanish label for `waitingKind` ("pide permiso", "te pregunta", "terminó", "entregó"). */
+  waitingLabel: string | null;
+  /** Where `status` came from: official hooks or the transcript fallback. */
+  statusSource: "hooks" | "transcript";
+  /** Last deliverable the session wrote in its current turn; null if none. */
+  deliverable: Deliverable | null;
 }
 
 export interface DeptSummary {
@@ -160,11 +174,15 @@ function buildAgents(db: DB, sessionId: string, tokens: Map<string, Tokens>, now
   const action = db.prepare(
     "SELECT summary FROM events WHERE agent_id = ? AND kind IN ('tool_use','text','prompt','error') ORDER BY ts DESC, id DESC LIMIT 1",
   );
+  const hooks = hookStates(db, sessionId);
   return rows.map((r) => {
     const last = lastEvent(db, r.id);
     const doing = action.get(r.id) as { summary: string } | undefined;
     const finished = r.kind === "subagent" && !!r.spawn_tool_use_id && !!returned.get(r.spawn_tool_use_id);
     const parent = r.spawn_tool_use_id ? (owner.get(r.spawn_tool_use_id) as { agent_id: string } | undefined) : undefined;
+    // Official hook signal first (main agent = key '', subagent = 'agent-<id>'); transcript when stale/missing.
+    const hook = freshHookState(hooks.get(r.kind === "main" ? "" : r.id.slice(sessionId.length + 1)), r.last_event_at, now);
+    const fromHook = hook !== null && !(finished && r.kind === "subagent");
     return {
       id: r.id,
       kind: r.kind,
@@ -174,11 +192,13 @@ function buildAgents(db: DB, sessionId: string, tokens: Map<string, Tokens>, now
       model: r.model,
       parentId: parent?.agent_id ?? (r.kind === "subagent" ? sessionId : null),
       spawnDepth: r.spawn_depth,
-      status: deriveStatus(last, r.last_event_at, now, finished),
+      status: fromHook ? hook.state : deriveStatus(last, r.last_event_at, now, finished),
       current: doing?.summary ?? last?.summary ?? null,
       lastEventAt: r.last_event_at,
       tokens: tokens.get(r.id) ?? ZERO,
       hatDepartment: r.kind === "subagent" && r.agent_type ? hats.get(r.agent_type) ?? null : null,
+      waitingKind: fromHook && hook.state === "waiting" ? hook.reason : null,
+      source: fromHook ? "hooks" : "transcript",
     };
   });
 }
@@ -196,17 +216,29 @@ interface SessionRow {
   agent_setting: string | null;
 }
 
-function toSessionView(row: SessionRow, agents: AgentView[], ctx: Ctx): SessionView {
+function toSessionView(db: DB, row: SessionRow, agents: AgentView[], ctx: Ctx): SessionView {
   const main = agents.find((a) => a.kind === "main");
   const subs = agents.filter((a) => a.kind === "subagent");
   const activeSubs = subs.filter((a) => a.status === "working").length;
   const hatDept = row.agent_setting ? ctx.hats.get(row.agent_setting) ?? null : null;
   let status: Status = main?.status ?? "idle";
+  let kind: HookReason | null = main?.waitingKind ?? null;
+  const source = main?.source ?? "transcript";
   if (row.automated && status === "waiting") {
     status = "done";
+    kind = null;
     if (main) main.status = "done";
   }
-  if (activeSubs > 0 && status !== "error") status = "subagents";
+  // A subagent blocked on the human (permission / question) calls the whole session for attention.
+  const asking = subs.find((a) => a.status === "waiting" && (a.waitingKind === "permission" || a.waitingKind === "question"));
+  if (asking && status !== "error" && status !== "done") {
+    status = "waiting";
+    kind = asking.waitingKind;
+  } else if (activeSubs > 0 && status !== "error") status = "subagents";
+  const deliverable = latestDeliverable(db, ctx.vaultDir, row.id, turnStartOf(db, row.id, hookStates(db, row.id).get("")));
+  if (status === "waiting" && kind === null) kind = deliverable ? "delivered" : "finished"; // transcript fallback
+  if (status !== "waiting") kind = null;
+  const waitingKind = kind === "permission" || kind === "question" || kind === "finished" || kind === "delivered" ? kind : null;
   return {
     id: row.id,
     title: row.title,
@@ -228,6 +260,10 @@ function toSessionView(row: SessionRow, agents: AgentView[], ctx: Ctx): SessionV
         id: a.id, hat: a.agentType ?? "hat", department: a.hatDepartment!, status: a.status, model: a.model, current: a.current,
       })),
     drones: subs.filter((a) => !a.hatDepartment && a.status === "working").length,
+    waitingKind,
+    waitingLabel: waitingKind ? REASON_LABEL[waitingKind] : null,
+    statusSource: source,
+    deliverable,
   };
 }
 
@@ -268,7 +304,7 @@ export function overview(db: DB, ctx: Ctx, days = 30, now = Date.now()) {
   let today = ZERO;
   for (const s of sessions) {
     const agents = buildAgents(db, s.id, allTokens, now, ctx.hats);
-    const view = toSessionView(s, agents, ctx);
+    const view = toSessionView(db, s, agents, ctx);
     const pk = resolveProject(ctx.vault, s.cwd, s.project_dir);
     let p = projects.get(pk.key);
     if (!p) {
@@ -336,10 +372,11 @@ export function sessionDetail(db: DB, ctx: Ctx, sessionId: string, limit = 300, 
     )
     .all(sessionId);
   return {
-    session: toSessionView(row, agents, ctx),
+    session: toSessionView(db, row, agents, ctx),
     project: resolveProject(ctx.vault, row.cwd, row.project_dir),
     agents,
     events,
     files,
+    deliverables: listDeliverables(db, ctx.vaultDir, { session: sessionId, limit: 50 }),
   };
 }

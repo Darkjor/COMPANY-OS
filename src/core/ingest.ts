@@ -1,6 +1,7 @@
 import { closeSync, existsSync, openSync, readFileSync, readSync, readdirSync, statSync } from "node:fs";
 import { basename, join, relative, sep } from "node:path";
 import { tx, type DB } from "./db.ts";
+import { classifyDeliverable, DELIVERABLE_TOOLS, recordDeliverable } from "./deliverables.ts";
 import { log } from "./log.ts";
 import { parseLine, type ParsedLine } from "./parse.ts";
 
@@ -102,8 +103,13 @@ function readMeta(file: string): Record<string, unknown> {
 const minTs = (a: string | null, b: string | null) => (!a ? b : !b ? a : a < b ? a : b);
 const maxTs = (a: string | null, b: string | null) => (!a ? b : !b ? a : a > b ? a : b);
 
+export interface IngestOptions {
+  /** When set, Write/Edit tool_use blocks on vault files are recorded as deliverables (fallback to hooks). */
+  vaultDir?: string;
+}
+
 /** Ingest new lines of one transcript. Returns the session id if anything changed. */
-export function ingestFile(db: DB, ref: TranscriptRef): string | null {
+export function ingestFile(db: DB, ref: TranscriptRef, opts: IngestOptions = {}): string | null {
   let chunk: Chunk | null;
   try {
     chunk = readNewLines(db, ref.file);
@@ -197,6 +203,13 @@ export function ingestFile(db: DB, ref: TranscriptRef): string | null {
       for (const e of p.events) {
         insEvent.run(e.id, ref.agentId, e.ts, e.kind, e.toolName, e.toolUseId, e.summary);
         if (e.filePath && e.fileOp) insFile.run(ref.agentId, e.filePath, e.fileOp, e.ts);
+        if (opts.vaultDir && e.kind === "tool_use" && e.filePath && e.toolName && DELIVERABLE_TOOLS.has(e.toolName)) {
+          const c = classifyDeliverable(opts.vaultDir, e.filePath);
+          if (c) {
+            const hat = ref.kind === "subagent" ? ((meta.agentType as string) ?? null) : agentSetting;
+            recordDeliverable(db, c, ref.sessionId, e.ts, "transcript", hat);
+          }
+        }
       }
       const u = p.usage;
       if (u) upUsage.run(u.messageId, ref.agentId, u.ts, u.model, u.input, u.output, u.cacheRead, u.cacheCreate);
@@ -206,12 +219,12 @@ export function ingestFile(db: DB, ref: TranscriptRef): string | null {
   return ref.sessionId;
 }
 
-export function ingestAll(db: DB, root: string): Set<string> {
+export function ingestAll(db: DB, root: string, opts: IngestOptions = {}): Set<string> {
   const changed = new Set<string>();
   for (const file of listTranscripts(root)) {
     const ref = classify(root, file);
     if (!ref) continue;
-    const sid = ingestFile(db, ref);
+    const sid = ingestFile(db, ref, opts);
     if (sid) changed.add(sid);
   }
   return changed;

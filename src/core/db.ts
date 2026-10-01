@@ -68,11 +68,56 @@ CREATE TABLE IF NOT EXISTS ingest_state (
   byte_offset INTEGER NOT NULL,
   size        INTEGER NOT NULL
 );
+
+-- Hook log: ONLY allow-listed fields (see core/hooks.ts). Not rebuildable from transcripts.
+CREATE TABLE IF NOT EXISTS hook_events (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts                TEXT NOT NULL,
+  session_id        TEXT NOT NULL,
+  event             TEXT NOT NULL,
+  cwd               TEXT,
+  tool_name         TEXT,
+  file_path         TEXT,
+  notification_type TEXT,
+  agent_id          TEXT,
+  agent_type        TEXT,
+  team_name         TEXT,
+  teammate_name     TEXT,
+  payload_keys      TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_hook_events_session ON hook_events(session_id, ts);
+
+-- Latest hook-derived state per (session, agent). agent_id '' = the main agent.
+CREATE TABLE IF NOT EXISTS hook_state (
+  session_id      TEXT NOT NULL,
+  agent_id        TEXT NOT NULL DEFAULT '',
+  state           TEXT NOT NULL,   -- working | error | waiting | idle | done
+  reason          TEXT,            -- permission | question | finished | delivered | ended | failure | null
+  event           TEXT NOT NULL,
+  at              TEXT NOT NULL,
+  turn_started_at TEXT,
+  PRIMARY KEY (session_id, agent_id)
+);
+
+-- Vault files written by agents (Write/Edit under Proyectos/<slug>/<dept>/...).
+CREATE TABLE IF NOT EXISTS deliverables (
+  path       TEXT PRIMARY KEY,     -- relative to the vault, forward slashes
+  session_id TEXT NOT NULL,
+  project    TEXT NOT NULL,        -- slug
+  department TEXT NOT NULL,
+  type       TEXT NOT NULL,        -- para-direccion | informe | revision | plan | brief | otro
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  source     TEXT NOT NULL,        -- hook | transcript
+  agent_type TEXT                  -- HAT/subagent type that wrote it, when known
+);
+CREATE INDEX IF NOT EXISTS idx_deliverables_session ON deliverables(session_id, updated_at);
+CREATE INDEX IF NOT EXISTS idx_deliverables_project ON deliverables(project, updated_at);
 `;
 
 export type DB = DatabaseSync;
 
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 export function openDb(path: string): DB {
   if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
@@ -83,7 +128,11 @@ export function openDb(path: string): DB {
   return db;
 }
 
-/** The DB is only an index: a migration may simply force a full re-read of the transcripts. */
+/**
+ * Transcript tables are an index: a migration may simply force a full re-read of the transcripts
+ * (v5 does, to backfill deliverables). hook_events / hook_state / deliverables are NOT rebuildable
+ * from transcripts once Claude Code cleans them up, so migrations must never drop or reset them.
+ */
 function migrate(db: DB): void {
   const { user_version: v } = db.prepare("PRAGMA user_version").get() as { user_version: number };
   if (v >= SCHEMA_VERSION) return;
