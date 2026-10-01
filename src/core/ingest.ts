@@ -163,13 +163,14 @@ export function ingestFile(db: DB, ref: TranscriptRef, opts: IngestOptions = {})
     const meta = ref.kind === "subagent" ? readMeta(ref.file) : {};
     db.prepare(
       `INSERT INTO agents(id, session_id, kind, agent_type, name, description, spawn_depth, spawn_tool_use_id,
-                          model, started_at, last_event_at)
-       VALUES(?,?,?,?,?,?,?,?,?,?,?)
+                          model, started_at, last_event_at, request_shape)
+       VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT(id) DO UPDATE SET
          agent_type = COALESCE(excluded.agent_type, agents.agent_type),
          name = COALESCE(excluded.name, agents.name),
          description = COALESCE(excluded.description, agents.description),
          model = COALESCE(excluded.model, agents.model),
+         request_shape = COALESCE(excluded.request_shape, agents.request_shape),
          started_at = CASE WHEN agents.started_at IS NULL OR excluded.started_at < agents.started_at
                            THEN excluded.started_at ELSE agents.started_at END,
          last_event_at = CASE WHEN agents.last_event_at IS NULL OR excluded.last_event_at > agents.last_event_at
@@ -186,8 +187,12 @@ export function ingestFile(db: DB, ref: TranscriptRef, opts: IngestOptions = {})
       model,
       first,
       last,
+      (meta.requestShape as string) ?? null,
     );
 
+    const insNote = db.prepare(
+      "INSERT OR IGNORE INTO task_notifications(session_id, task_id, tool_use_id, status, ts) VALUES(?,?,?,?,?)",
+    );
     const insEvent = db.prepare(
       "INSERT OR IGNORE INTO events(id, agent_id, ts, kind, tool_name, tool_use_id, summary) VALUES(?,?,?,?,?,?,?)",
     );
@@ -200,6 +205,7 @@ export function ingestFile(db: DB, ref: TranscriptRef, opts: IngestOptions = {})
          cache_read = excluded.cache_read, cache_create = excluded.cache_create`,
     );
     for (const p of parsed) {
+      if (p.ts) for (const n of p.notifications) insNote.run(ref.sessionId, n.taskId ?? "", n.toolUseId ?? "", n.status, p.ts);
       for (const e of p.events) {
         insEvent.run(e.id, ref.agentId, e.ts, e.kind, e.toolName, e.toolUseId, e.summary);
         if (e.filePath && e.fileOp) insFile.run(ref.agentId, e.filePath, e.fileOp, e.ts);

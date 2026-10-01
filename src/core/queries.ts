@@ -116,6 +116,7 @@ interface AgentRow {
   spawn_depth: number;
   spawn_tool_use_id: string | null;
   last_event_at: string | null;
+  request_shape: string | null;
 }
 
 interface LastEvent {
@@ -138,12 +139,21 @@ export const hottest = (list: Status[]): Status =>
   list.reduce<Status>((a, b) => (STATUS_RANK[b] > STATUS_RANK[a] ? b : a), "idle");
 
 /** Derive status from the last event only — the transcript is the single source of truth. */
-export function deriveStatus(last: LastEvent | undefined, lastAt: string | null, now: number, finished: boolean): Status {
+export function deriveStatus(
+  last: LastEvent | undefined,
+  lastAt: string | null,
+  now: number,
+  finished: boolean,
+  background = false,
+): Status {
   if (finished) return "done";
   if (!last || !lastAt) return "idle";
   const age = now - Date.parse(lastAt);
   // A turn that ended (or was interrupted) is waiting on the human, for much longer than "working" stays fresh.
   const turnEnded = last.kind === "text" || (last.kind === "prompt" && last.summary.startsWith("[Request interrupted"));
+  // A background subagent never waits on the human. Its final text is only "done" once it has been
+  // quiet for a while (last resort: the hook or the task-notification normally says so first).
+  if (background && turnEnded) return age > IDLE_AFTER_MS ? "done" : "working";
   if (turnEnded) return age > WAITING_TTL_MS ? "idle" : "waiting";
   if (age > IDLE_AFTER_MS) return "idle";
   if (last.kind === "error") return "error";
@@ -169,7 +179,14 @@ function lastEvent(db: DB, agentId: string): LastEvent | undefined {
 function buildAgents(db: DB, sessionId: string, tokens: Map<string, Tokens>, now: number, hats: Map<string, string>): AgentView[] {
   const rows = db.prepare("SELECT * FROM agents WHERE session_id = ? ORDER BY started_at").all(sessionId) as unknown as AgentRow[];
   const owner = db.prepare("SELECT agent_id FROM events WHERE tool_use_id = ? AND kind = 'tool_use' LIMIT 1");
-  const returned = db.prepare("SELECT 1 FROM events WHERE tool_use_id = ? AND kind IN ('tool_result','error') LIMIT 1");
+  const returned = db.prepare(
+    "SELECT summary FROM events WHERE tool_use_id = ? AND kind IN ('tool_result','error') ORDER BY ts LIMIT 1",
+  );
+  // A background agent's own end: the parent transcript's <task-notification> (by agent id or spawn tool_use id).
+  const notified = db.prepare(
+    `SELECT MAX(ts) ts FROM task_notifications
+     WHERE session_id = ? AND status IN ('completed','failed','killed') AND (tool_use_id = ? OR task_id = ?)`,
+  );
   // "What is it doing" skips noise like bare tool results and thinking blocks.
   const action = db.prepare(
     "SELECT summary FROM events WHERE agent_id = ? AND kind IN ('tool_use','text','prompt','error') ORDER BY ts DESC, id DESC LIMIT 1",
@@ -178,7 +195,19 @@ function buildAgents(db: DB, sessionId: string, tokens: Map<string, Tokens>, now
   return rows.map((r) => {
     const last = lastEvent(db, r.id);
     const doing = action.get(r.id) as { summary: string } | undefined;
-    const finished = r.kind === "subagent" && !!r.spawn_tool_use_id && !!returned.get(r.spawn_tool_use_id);
+    const result = r.kind === "subagent" && r.spawn_tool_use_id
+      ? (returned.get(r.spawn_tool_use_id) as { summary: string } | undefined)
+      : undefined;
+    // run_in_background: the spawn's tool_result ("Async agent launched…") arrives at once and says
+    // nothing about the agent ending. It ends with SubagentStop / task-notification / long silence.
+    const background = r.kind === "subagent" && (r.request_shape === "background" || !!result?.summary.startsWith("Async agent launched"));
+    let finished = !background && !!result;
+    if (background) {
+      const taskId = r.id.slice(sessionId.length + 1).replace(/^agent-/, "");
+      const n = notified.get(sessionId, r.spawn_tool_use_id ?? " ", taskId) as { ts: string | null } | undefined;
+      // A later transcript event means the agent was resumed after that notification.
+      finished = !!n?.ts && n.ts >= (r.last_event_at ?? "");
+    }
     const parent = r.spawn_tool_use_id ? (owner.get(r.spawn_tool_use_id) as { agent_id: string } | undefined) : undefined;
     // Official hook signal first (main agent = key '', subagent = 'agent-<id>'); transcript when stale/missing.
     const hook = freshHookState(hooks.get(r.kind === "main" ? "" : r.id.slice(sessionId.length + 1)), r.last_event_at, now);
@@ -192,7 +221,7 @@ function buildAgents(db: DB, sessionId: string, tokens: Map<string, Tokens>, now
       model: r.model,
       parentId: parent?.agent_id ?? (r.kind === "subagent" ? sessionId : null),
       spawnDepth: r.spawn_depth,
-      status: fromHook ? hook.state : deriveStatus(last, r.last_event_at, now, finished),
+      status: fromHook ? hook.state : deriveStatus(last, r.last_event_at, now, finished, background),
       current: doing?.summary ?? last?.summary ?? null,
       lastEventAt: r.last_event_at,
       tokens: tokens.get(r.id) ?? ZERO,

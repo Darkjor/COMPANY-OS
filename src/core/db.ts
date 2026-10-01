@@ -27,7 +27,8 @@ CREATE TABLE IF NOT EXISTS agents (
   spawn_tool_use_id TEXT,
   model            TEXT,
   started_at       TEXT,
-  last_event_at    TEXT
+  last_event_at    TEXT,
+  request_shape    TEXT                    -- meta.requestShape: "background" = run_in_background
 );
 CREATE INDEX IF NOT EXISTS idx_agents_session ON agents(session_id);
 
@@ -68,6 +69,17 @@ CREATE TABLE IF NOT EXISTS ingest_state (
   byte_offset INTEGER NOT NULL,
   size        INTEGER NOT NULL
 );
+
+-- A background agent stopped (task-notification in the parent transcript). Rebuildable from transcripts.
+CREATE TABLE IF NOT EXISTS task_notifications (
+  session_id  TEXT NOT NULL,
+  task_id     TEXT NOT NULL,           -- agent id ('' when the block carried none)
+  tool_use_id TEXT NOT NULL,           -- the spawn's tool_use id ('' when none)
+  status      TEXT NOT NULL,
+  ts          TEXT NOT NULL,
+  PRIMARY KEY (session_id, task_id, tool_use_id, status, ts)
+);
+CREATE INDEX IF NOT EXISTS idx_task_notifications_session ON task_notifications(session_id);
 
 -- Hook log: ONLY allow-listed fields (see core/hooks.ts). Not rebuildable from transcripts.
 CREATE TABLE IF NOT EXISTS hook_events (
@@ -117,7 +129,7 @@ CREATE INDEX IF NOT EXISTS idx_deliverables_project ON deliverables(project, upd
 
 export type DB = DatabaseSync;
 
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 
 export function openDb(path: string): DB {
   if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
@@ -130,7 +142,7 @@ export function openDb(path: string): DB {
 
 /**
  * Transcript tables are an index: a migration may simply force a full re-read of the transcripts
- * (v5 does, to backfill deliverables). hook_events / hook_state / deliverables are NOT rebuildable
+ * (v5 backfilled deliverables; v6 fills agents.request_shape and task_notifications). hook_events / hook_state / deliverables are NOT rebuildable
  * from transcripts once Claude Code cleans them up, so migrations must never drop or reset them.
  */
 function migrate(db: DB): void {
@@ -142,6 +154,10 @@ function migrate(db: DB): void {
   }
   if (!cols.some((c) => c.name === "agent_setting")) {
     db.exec("ALTER TABLE sessions ADD COLUMN agent_setting TEXT");
+  }
+  const agentCols = db.prepare("PRAGMA table_info(agents)").all() as { name: string }[];
+  if (!agentCols.some((c) => c.name === "request_shape")) {
+    db.exec("ALTER TABLE agents ADD COLUMN request_shape TEXT");
   }
   db.exec("UPDATE sessions SET automated = 0"); // v2 misdetected interactive sessions; recompute
   db.exec("DELETE FROM ingest_state"); // re-ingest everything so old sessions get the new column right

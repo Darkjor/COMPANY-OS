@@ -42,6 +42,46 @@ export interface ParsedLine {
   agentSetting: string | null;
   events: ParsedEvent[];
   usage: ParsedUsage | null;
+  /** `<task-notification>` blocks (a background agent stopped): how a parent learns a subagent finished. */
+  notifications: ParsedNotification[];
+}
+
+export interface ParsedNotification {
+  taskId: string | null;
+  toolUseId: string | null;
+  status: string;
+}
+
+const NOTIFICATION_RE = /<task-notification>([\s\S]*?)<\/task-notification>/g;
+const tag = (body: string, name: string): string | null =>
+  new RegExp(`<${name}>\s*([^<]{1,200}?)\s*</${name}>`).exec(body)?.[1] ?? null;
+
+/** Pull the id/status fields out of `<task-notification>` blocks. Result text is never kept. */
+export function extractNotifications(text: string): ParsedNotification[] {
+  if (!text.includes("<task-notification>")) return [];
+  const out: ParsedNotification[] = [];
+  for (const m of text.matchAll(NOTIFICATION_RE)) {
+    const status = tag(m[1], "status");
+    const taskId = tag(m[1], "task-id");
+    const toolUseId = tag(m[1], "tool-use-id");
+    if (status && (taskId || toolUseId)) out.push({ taskId, toolUseId, status });
+  }
+  return out;
+}
+
+function notificationsOf(raw: Record<string, unknown>): ParsedNotification[] {
+  if (raw.type === "queue-operation") {
+    return raw.operation === "enqueue" && typeof raw.content === "string" ? extractNotifications(raw.content) : [];
+  }
+  if (raw.type !== "user") return [];
+  const content = (raw.message as { content?: unknown } | undefined)?.content;
+  if (typeof content === "string") return extractNotifications(content);
+  if (!Array.isArray(content)) return [];
+  return content.flatMap((b: unknown) =>
+    b && typeof b === "object" && (b as { type?: unknown }).type === "text" && typeof (b as { text?: unknown }).text === "string"
+      ? extractNotifications((b as { text: string }).text)
+      : [],
+  );
 }
 
 const SECRET_PATTERNS: RegExp[] = [
@@ -149,12 +189,14 @@ function blockEvents(raw: Record<string, unknown>, ts: string, role: string): Pa
       }
       case "tool_result": {
         const isError = b.is_error === true;
+        // Marks the instant result of a run_in_background spawn (it does NOT mean the agent finished).
+        const isAsync = !isError && resultText(b.content).startsWith("Async agent launched");
         const ev = mk(
           uuid,
           i,
           ts,
           isError ? "error" : "tool_result",
-          isError ? clip(redact(resultText(b.content))) : "resultado",
+          isError ? clip(redact(resultText(b.content))) : isAsync ? "Async agent launched" : "resultado",
         );
         ev.toolUseId = str(b.tool_use_id);
         out.push(ev);
@@ -196,6 +238,7 @@ export function parseLine(line: string): ParsedLine | null {
     agentSetting: raw.type === "agent-setting" ? str(raw.agentSetting) : null,
     events: [],
     usage: null,
+    notifications: notificationsOf(raw),
   };
 
   if ((raw.type === "user" || raw.type === "assistant") && ts) {
