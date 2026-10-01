@@ -57,6 +57,46 @@ Campos útiles por línea (una línea = un evento JSON):
 | `message.content[]` | bloques `text`, `thinking`, `tool_use` (`name`, `input`), `tool_result` |
 | `toolUseResult` | resultado de herramienta (errores incluidos) |
 
+### 3.1 Hooks HTTP (fuente oficial de estado)
+
+Claude Code avisa cada evento (`SessionStart`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`,
+`PermissionRequest`, `Notification`, `Stop`, `StopFailure`, `SubagentStart/Stop`, `SessionEnd`,
+`TeammateIdle`, `TaskCreated`, `TaskCompleted`…) con un `POST /hooks/<Evento>?t=<token>` a este servidor
+(token en `data/hook-token.txt`; configurados en `~/.claude/settings.json`). El servidor responde siempre
+`200 {}` y **solo guarda una lista blanca** de campos (`src/core/hooks.ts`, `sanitizeHook`):
+
+| Campo guardado | Origen |
+|---|---|
+| sesión, evento, hora de recepción | `session_id`, ruta de la URL, reloj local |
+| cwd | `cwd` |
+| herramienta y archivo | `tool_name`, `tool_input.file_path` (nada más de `tool_input`) |
+| tipo de aviso | `notification_type` |
+| agente | `agent_id`, `agent_type` |
+| equipo | `team_name`, `teammate_name` |
+| (solo TaskCreated/TaskCompleted/TeammateIdle) | **nombres** de las claves del payload, nunca los valores |
+
+Nunca se guardan prompts, comandos, contenidos de archivos ni respuestas del modelo. El payload crudo solo
+se escribe con `COMPANY_OS_HOOK_DEBUG=1` en `data/hooks-events.ndjson`, con tope de 5 MB (el servidor
+nunca borra ese archivo). Tablas (en `company-os.db`): `hook_events` (bitácora), `hook_state` (último
+estado por sesión y agente) y `deliverables` (§3.2). **Estas tres tablas no se pueden reconstruir desde los
+JSONL** y las migraciones no deben tocarlas.
+
+### 3.2 Entregables
+
+Un `Write`/`Edit`/`MultiEdit` con `file_path` dentro del vault, en `Proyectos/<slug>/<departamento>/…` y de
+tipo texto (`.md .txt .json .csv .yaml`), crea o actualiza un entregable (ruta relativa, sesión, proyecto,
+departamento, tipo, hora, HAT). Se registra por el hook `PostToolUse` (solo escrituras exitosas) y, de
+respaldo, desde los `tool_use` de los JSONL (puede incluir una escritura que falló). El tipo sale del nombre
+del archivo: `para-direccion` · `informe` · `revision` · `plan` · `brief` · `otro`. `GET /api/vault/file`
+rechaza todo lo que no sea una ruta relativa limpia dentro del vault (`..`, absolutas, UNC, `:`, ocultas,
+symlinks que salgan).
+
+### 3.3 Respaldo de la DB
+
+Pasados los `cleanupPeriodDays` de Claude Code los JSONL desaparecen; entonces `company-os.db` es el único
+histórico de la actividad y de los hooks. Hay que tratarla como dato, no como caché (el respaldo automático
+de la DB está pendiente de implementar).
+
 Riesgo: el formato **no es una API pública** y puede cambiar entre versiones de Claude Code.
 Mitigación: el parser ignora campos desconocidos, guarda `version` de cada evento, y tiene
 tests con muestras reales anonimizadas.
@@ -120,7 +160,31 @@ completo del mensaje. El detalle completo se lee bajo demanda del JSONL.
 
 ## 7. Estados de un agente
 
-Derivados solo de los eventos (no hay otra señal):
+Hay dos fuentes, en este orden:
+
+1. **Hooks (oficial).** El último aviso de cada agente decide su estado (agente principal = eventos sin
+   `agent_id`; subagente = `agent-<agent_id>`). Tabla final:
+
+| Aviso | Estado | Texto (`waitingKind`) |
+|---|---|---|
+| `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `SubagentStart` | 🟢 Trabajando | |
+| `PostToolUseFailure`, `StopFailure` | 🔴 Error | |
+| `PermissionRequest`, `Notification` `permission_prompt` | 🟡 Esperando | "pide permiso" (`permission`) |
+| `Notification` `idle_prompt` / `elicitation_dialog`, `PreToolUse` de `AskUserQuestion` | 🟡 Esperando | "te pregunta" (`question`) |
+| `Stop` | 🟡 Esperando | "terminó" (`finished`), o "entregó" (`delivered`) si ese turno escribió un entregable |
+| `SessionEnd`, `SessionStart` | ⚪ Inactivo | |
+| `SubagentStop` | ⚫ Terminado (subagente) | |
+
+   Notas: un `idle_prompt` que llega después de un `Stop` no degrada "terminó/entregó" a "te pregunta" (es solo
+   el recordatorio de que Claude sigue inactivo). Un subagente que pide permiso o pregunta convierte a la sesión
+   entera en 🟡. Las sesiones automáticas (`claude -p`) siguen terminando en ⚫ "hecho".
+   **El turno** empieza en el último `UserPromptSubmit` (o en el primer aviso visto de la sesión).
+2. **JSONL (respaldo).** Se usa cuando no hay avisos recientes del agente: el último hook tiene más de 10 min
+   estando en 🟢/🔴; o los JSONL traen eventos más de 2 min más nuevos que el último hook (se perdieron
+   avisos: servidor apagado o hooks sin instalar). Un 🟡 de hooks vence a las 2 h (pasa a ⚪), igual que el de
+   los JSONL. La API indica de dónde salió cada estado en `statusSource` (`hooks` | `transcript`).
+
+Reglas de respaldo, derivadas solo de los eventos del transcript:
 
 | Estado | Regla |
 |---|---|
