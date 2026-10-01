@@ -16,13 +16,13 @@ a.btn:hover { box-shadow: inset 0 0 0 2px var(--text); }
 }
 .reader-back { grid-column: 1 / -1; grid-row: 1; }
 .reader-side { grid-column: 1; grid-row: 2 / span 2; position: sticky; top: 72px; align-self: start; display: flex; flex-direction: column; gap: 18px; padding-top: 6px; }
-.reader-head { grid-column: 2; grid-row: 2; min-width: 0; }
+.reader-head { grid-column: 2; grid-row: 2; min-width: 0; padding-bottom: 14px; }
 .reader-body { grid-column: 2; grid-row: 3; min-width: 0; }
 .reader-meta { margin: 0; display: flex; flex-direction: column; gap: 2px; color: var(--muted); font-size: 13px; }
 .reader-meta dd { margin: 0; }
 .reader-hat { font-family: var(--pixel); font-size: 13px; color: var(--text); text-transform: uppercase; letter-spacing: 0.03em; }
 .reader-links { display: flex; flex-direction: column; gap: 8px; }
-.reader-toc ol { margin: 6px 0 0; padding-left: 18px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.reader-toc ol { margin: 6px 0 0; padding-left: 0; list-style: none; color: var(--muted); font-size: 13px; line-height: 1.5; }
 .reader-toc a:hover { color: var(--text); text-decoration: underline; }
 .reader-toc-phone { display: none; }
 .reader-title { font: 600 28px/1.2 var(--sans); margin: 0 0 8px; overflow-wrap: anywhere; }
@@ -70,9 +70,9 @@ a.btn:hover { box-shadow: inset 0 0 0 2px var(--text); }
 .md li.task-list-item > p { margin: 0; }
 
 .table-wrap { overflow-x: auto; margin: 0 0 16px; }
-.md table { border-collapse: collapse; width: max-content; min-width: 100%; font-size: 14px; line-height: 1.5; }
+.md table { border-collapse: collapse; width: 100%; font-size: 14px; line-height: 1.5; }
 .md th { font: 400 11px/1.3 var(--mono); text-transform: uppercase; letter-spacing: 0.05em; color: var(--dim); text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line-strong); }
-.md td { padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; min-width: 90px; }
+.md td { padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; min-width: 120px; }
 
 /* read-only decision boxes, drawn (never <input>) */
 .cbx { flex: none; width: 16px; height: 16px; margin-top: 3px; position: relative; display: inline-block; box-shadow: inset 0 0 0 2px var(--muted); background: var(--bg); }

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { projectHref, useLive, useNow, type Overview, type ProjectView } from "./api.ts";
+import { projectHref, useLive, useNow, useSeenVersion, type Overview, type ProjectView } from "./api.ts";
 import { STATUS_LABEL, fmtNum, freshTokens, plural, timeAgo } from "./format.ts";
 import { NeedsYou, collectCalls } from "./NeedsYou.tsx";
 import { LIVE, Room, deptCode } from "./Office.tsx";
@@ -14,6 +14,7 @@ export function Company() {
   const [days, setDays] = useState(30);
   const { data, error } = useLive<Overview>(`/api/overview?days=${days}`);
   const now = useNow();
+  useSeenVersion(); // "Ya lo vi" must drop the card at once, before the server round-trip
 
   if (error && !data) return <div className="empty">Sin conexión con el observador. ¿Está corriendo <span className="mono">npm start</span>? ({error})</div>;
   if (!data) return <div className="empty">Abriendo la oficina…</div>;
