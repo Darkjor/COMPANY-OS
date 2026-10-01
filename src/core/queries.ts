@@ -8,6 +8,8 @@ export interface Ctx {
   vaultDir: string;
   vault: VaultProject[];
   departments: Department[];
+  /** HAT name → department slug (from the vault's HAT library). */
+  hats: Map<string, string>;
 }
 
 export type Status = "working" | "waiting" | "subagents" | "error" | "idle" | "done";
@@ -32,6 +34,18 @@ export interface AgentView {
   current: string | null;
   lastEventAt: string | null;
   tokens: Tokens;
+  /** Department of the agent's HAT; null for the main agent and for subagents without a HAT. */
+  hatDepartment: string | null;
+}
+
+/** A live subagent wearing a HAT: it sits at its own department's desk in the office. */
+export interface CrewMember {
+  id: string;
+  hat: string;
+  department: string;
+  status: Status;
+  model: string | null;
+  current: string | null;
 }
 
 export interface SessionView {
@@ -47,6 +61,9 @@ export interface SessionView {
   tokens: Tokens;
   activeAgents: number;
   department: string;
+  crew: CrewMember[];
+  /** Live subagents without a HAT (drawn as drones next to the main agent). */
+  drones: number;
 }
 
 export interface DeptSummary {
@@ -96,6 +113,8 @@ const add = (a: Tokens, b: Tokens): Tokens => ({
   cacheCreate: a.cacheCreate + b.cacheCreate,
 });
 
+const LIVE_STATUSES: ReadonlySet<Status> = new Set(["working", "subagents", "waiting", "error"]);
+
 const STATUS_RANK: Record<Status, number> = { working: 5, subagents: 4, error: 3, waiting: 2, idle: 1, done: 0 };
 export const hottest = (list: Status[]): Status =>
   list.reduce<Status>((a, b) => (STATUS_RANK[b] > STATUS_RANK[a] ? b : a), "idle");
@@ -129,7 +148,7 @@ function lastEvent(db: DB, agentId: string): LastEvent | undefined {
     .get(agentId) as LastEvent | undefined;
 }
 
-function buildAgents(db: DB, sessionId: string, tokens: Map<string, Tokens>, now: number): AgentView[] {
+function buildAgents(db: DB, sessionId: string, tokens: Map<string, Tokens>, now: number, hats: Map<string, string>): AgentView[] {
   const rows = db.prepare("SELECT * FROM agents WHERE session_id = ? ORDER BY started_at").all(sessionId) as unknown as AgentRow[];
   const owner = db.prepare("SELECT agent_id FROM events WHERE tool_use_id = ? AND kind = 'tool_use' LIMIT 1");
   const returned = db.prepare("SELECT 1 FROM events WHERE tool_use_id = ? AND kind IN ('tool_result','error') LIMIT 1");
@@ -155,6 +174,7 @@ function buildAgents(db: DB, sessionId: string, tokens: Map<string, Tokens>, now
       current: doing?.summary ?? last?.summary ?? null,
       lastEventAt: r.last_event_at,
       tokens: tokens.get(r.id) ?? ZERO,
+      hatDepartment: r.kind === "subagent" && r.agent_type ? hats.get(r.agent_type) ?? null : null,
     };
   });
 }
@@ -189,18 +209,29 @@ function toSessionView(row: SessionRow, agents: AgentView[], ctx: Ctx): SessionV
     tokens: agents.reduce((t, a) => add(t, a.tokens), ZERO),
     activeAgents: agents.filter((a) => a.status === "working").length,
     department: classifySession(row.cwd, row.title, ctx.vaultDir, ctx.departments),
+    crew: subs
+      .filter((a) => a.hatDepartment && LIVE_STATUSES.has(a.status))
+      .map((a) => ({
+        id: a.id, hat: a.agentType ?? "hat", department: a.hatDepartment!, status: a.status, model: a.model, current: a.current,
+      })),
+    drones: subs.filter((a) => !a.hatDepartment && a.status === "working").length,
   };
 }
 
 function summarizeDepartments(sessions: SessionView[], departments: Department[]): DeptSummary[] {
   return departments.map((d) => {
     const mine = sessions.filter((s) => s.department === d.slug);
+    // HAT crew sits in its own department, whatever department its parent session belongs to.
+    const crew = sessions.flatMap((s) => s.crew.filter((c) => c.department === d.slug));
+    const statuses = [...mine.map((s) => s.status), ...crew.map((c) => c.status)];
     return {
       slug: d.slug,
       name: d.name,
       icon: d.icon,
-      status: mine.length ? hottest(mine.map((s) => s.status)) : "idle",
-      activeAgents: mine.reduce((n, s) => n + s.activeAgents, 0),
+      status: statuses.length ? hottest(statuses) : "idle",
+      activeAgents:
+        mine.reduce((n, s) => n + (s.status === "working" || s.status === "subagents" ? 1 : 0) + s.drones, 0) +
+        crew.filter((c) => c.status === "working").length,
       sessions: mine.length,
     };
   });
@@ -223,7 +254,7 @@ export function overview(db: DB, ctx: Ctx, days = 30, now = Date.now()) {
   const projects = new Map<string, ProjectView>();
   let today = ZERO;
   for (const s of sessions) {
-    const agents = buildAgents(db, s.id, allTokens, now);
+    const agents = buildAgents(db, s.id, allTokens, now, ctx.hats);
     const view = toSessionView(s, agents, ctx);
     const pk = resolveProject(ctx.vault, s.cwd, s.project_dir);
     let p = projects.get(pk.key);
@@ -276,7 +307,7 @@ export function projectDetail(db: DB, ctx: Ctx, key: string, now = Date.now()) {
 export function sessionDetail(db: DB, ctx: Ctx, sessionId: string, limit = 300, now = Date.now()) {
   const row = db.prepare("SELECT * FROM sessions WHERE id = ?").get(sessionId) as SessionRow | undefined;
   if (!row) return null;
-  const agents = buildAgents(db, sessionId, tokensByAgent(db), now);
+  const agents = buildAgents(db, sessionId, tokensByAgent(db), now, ctx.hats);
   const events = db
     .prepare(
       `SELECT e.id, e.agent_id agentId, e.ts, e.kind, e.tool_name toolName, e.summary

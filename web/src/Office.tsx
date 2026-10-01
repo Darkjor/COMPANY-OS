@@ -1,4 +1,4 @@
-import type { DeptSummary, SessionView, Status } from "./api.ts";
+import type { CrewMember, DeptSummary, SessionView, Status } from "./api.ts";
 import { STATUS_LABEL, plural, timeAgo } from "./format.ts";
 import { Desk, Drone, Worker } from "./pixel/Sprites.tsx";
 
@@ -6,7 +6,7 @@ export const LIVE: ReadonlySet<Status> = new Set(["working", "subagents", "waiti
 
 /** Three-letter nameplate for a department ("Diseño" → "DIS"). */
 export function deptCode(name: string): string {
-  return name.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Za-z]/g, "").slice(0, 3).toUpperCase();
+  return name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Za-z]/g, "").slice(0, 3).toUpperCase();
 }
 
 export function caption(s: SessionView, now: number): string {
@@ -17,7 +17,7 @@ export function caption(s: SessionView, now: number): string {
 
 function Seat({ s, now }: { s: SessionView; now: number }) {
   const status: Status = s.status === "subagents" ? "working" : s.status;
-  const drones = Math.max(0, Math.min(s.activeAgents - 1, 4));
+  const drones = Math.min(s.drones, 4);
   return (
     <a
       className={`seat seat-${s.status}`}
@@ -40,22 +40,49 @@ function Seat({ s, now }: { s: SessionView; now: number }) {
   );
 }
 
-function Station({ dept, sessions, now }: { dept: DeptSummary; sessions: SessionView[]; now: number }) {
-  const live = sessions.filter((s) => LIVE.has(s.status));
+/** A subagent wearing a HAT, seated at its own department's desk; clicking opens its parent session. */
+function CrewSeat({ c }: { c: CrewMember }) {
+  const status: Status = c.status === "subagents" ? "working" : c.status;
+  const sessionId = c.id.split("/")[0];
   return (
-    <div className={`station ${live.length ? "station-live" : ""}`}>
+    <a className={`seat seat-${c.status}`} href={`#/s/${sessionId}`} title={`${c.hat} · ${STATUS_LABEL[c.status]}${c.current ? ` · ${c.current}` : ""}`}>
+      <span className="seat-figure">
+        <Worker seed={c.id} model={c.model} status={status} hat={c.department} label={`${c.hat}: ${STATUS_LABEL[c.status]}`} />
+      </span>
+      <Desk lit={status === "working"} />
+      <span className="seat-caption">
+        <span className="seat-hat">{c.hat}</span> {c.status === "working" ? c.current : STATUS_LABEL[c.status]}
+      </span>
+    </a>
+  );
+}
+
+function Station({ dept, sessions, crew, now }: { dept: DeptSummary; sessions: SessionView[]; crew: CrewMember[]; now: number }) {
+  const live = sessions.filter((s) => LIVE.has(s.status));
+  const seated = live.length + crew.length;
+  return (
+    <div className={`station ${seated ? "station-live" : ""}`}>
       <span className="plate" title={dept.name}>{deptCode(dept.name)}</span>
       <div className="station-seats">
-        {live.length === 0 ? (
+        {seated === 0 ? (
           <span className="seat seat-empty" aria-label={`${dept.name}: sin agentes`}>
             <span className="seat-figure" />
             <Desk lit={false} />
             <span className="seat-caption">{dept.sessions ? plural(dept.sessions, "sesión", "sesiones") : "libre"}</span>
           </span>
         ) : (
-          live.slice(0, 4).map((s) => <Seat key={s.id} s={s} now={now} />)
+          <>
+            {live.slice(0, 4).map((s) => (
+              <Seat key={s.id} s={s} now={now} />
+            ))}
+            {crew.slice(0, 4).map((c) => (
+              <CrewSeat key={c.id} c={c} />
+            ))}
+          </>
         )}
-        {live.length > 4 && <span className="overflow">+{live.length - 4}</span>}
+        {(live.length > 4 || crew.length > 4) && (
+          <span className="overflow">+{Math.max(0, live.length - 4) + Math.max(0, crew.length - 4)}</span>
+        )}
       </div>
     </div>
   );
@@ -86,7 +113,13 @@ export function Room({
       </header>
       <div className="floor">
         {departments.map((d) => (
-          <Station key={d.slug} dept={d} sessions={sessions.filter((s) => s.department === d.slug)} now={now} />
+          <Station
+            key={d.slug}
+            dept={d}
+            sessions={sessions.filter((s) => s.department === d.slug)}
+            crew={sessions.flatMap((s) => s.crew.filter((c) => c.department === d.slug))}
+            now={now}
+          />
         ))}
       </div>
     </section>

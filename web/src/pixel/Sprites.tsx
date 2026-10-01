@@ -40,6 +40,26 @@ const HAND_UP = [
   ".bbbbbbbbbb.",
 ];
 
+// Hat overlay for agents wearing a HAT (rows 0–2 replace the top of the head).
+const HAT = ["....kkkk....", "...kkkkkk...", "..kkkkkkkk.."];
+
+/** Muted, department-specific hat colors (never the status colors). */
+const HAT_COLOR: Record<string, string> = {
+  direccion: "oklch(0.60 0.11 45)",
+  desarrollo: "oklch(0.62 0.08 255)",
+  diseno: "oklch(0.64 0.10 340)",
+  marketing: "oklch(0.70 0.11 125)",
+  research: "oklch(0.68 0.07 200)",
+};
+
+function overlay(base: string[], top: string[]): string[] {
+  return base.map((row, y) => {
+    const o = top[y];
+    if (!o) return row;
+    return [...row].map((ch, x) => (o[x] && o[x] !== "." ? o[x] : ch)).join("");
+  });
+}
+
 // 18 × 8 desk seen from the front: the monitor's back sits on the left, its glow ("g") spills up when on.
 const DESK = [
   "gggggg............",
@@ -104,15 +124,32 @@ function Svg({ w, h, scale, className, label, children }: { w: number; h: number
   );
 }
 
-export function Worker({ seed, model, status, scale = 4, label }: { seed: string; model: string | null; status: Status; scale?: number; label?: string }) {
+export function Worker({
+  seed,
+  model,
+  status,
+  scale = 4,
+  label,
+  hat,
+}: {
+  seed: string;
+  model: string | null;
+  status: Status;
+  scale?: number;
+  label?: string;
+  /** Department slug of the agent's HAT: draws a hat in that department's color. */
+  hat?: string | null;
+}) {
   const h = hash(seed);
   const palette: Palette = {
     h: HAIR[h % HAIR.length],
     s: SKIN[(h >>> 4) % SKIN.length],
     e: "oklch(0.20 0.01 60)",
     b: SHIRT[modelTier(model)],
+    k: hat ? HAT_COLOR[hat] ?? "oklch(0.60 0.03 70)" : "transparent",
   };
-  const grid = status === "waiting" ? HAND_UP : SEATED;
+  const base = status === "waiting" ? HAND_UP : SEATED;
+  const grid = hat ? overlay(base, HAT) : base;
   return (
     <span className={`worker-sprite pose-${status}`}>
       <Svg w={12} h={12} scale={scale} label={label}>

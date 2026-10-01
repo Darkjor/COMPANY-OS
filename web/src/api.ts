@@ -22,6 +22,17 @@ export interface SessionView {
   tokens: Tokens;
   activeAgents: number;
   department: string;
+  crew: CrewMember[];
+  drones: number;
+}
+
+export interface CrewMember {
+  id: string;
+  hat: string;
+  department: string;
+  status: Status;
+  model: string | null;
+  current: string | null;
 }
 
 export interface DeptSummary {
@@ -86,6 +97,7 @@ export interface AgentView {
   current: string | null;
   lastEventAt: string | null;
   tokens: Tokens;
+  hatDepartment: string | null;
 }
 
 export interface EventRow {

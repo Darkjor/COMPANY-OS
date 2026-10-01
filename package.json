@@ -14,7 +14,8 @@
     "dev:web": "vite web",
     "build:web": "vite build web",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "hats": "node src/core/cli-hats.ts"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.3.0",

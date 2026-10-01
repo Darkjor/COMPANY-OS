@@ -68,8 +68,14 @@ export function Session({ id }: { id: string }) {
                   style={{ paddingLeft: 10 + depth * 18 }}
                   onClick={() => setFocus(focus === agent.id ? null : agent.id)}
                 >
-                  {agent.kind === "main" ? (
-                    <Worker seed={s.id} model={agent.model} status={agent.status === "subagents" ? "working" : agent.status} scale={2} />
+                  {agent.kind === "main" || agent.hatDepartment ? (
+                    <Worker
+                      seed={agent.kind === "main" ? s.id : agent.id}
+                      model={agent.model}
+                      status={agent.status === "subagents" ? "working" : agent.status}
+                      hat={agent.hatDepartment}
+                      scale={2}
+                    />
                   ) : (
                     <span className={`avatar avatar-${agent.status}`} title={agent.agentType ?? "subagente"}>
                       <Drone scale={4} />

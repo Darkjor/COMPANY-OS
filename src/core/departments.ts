@@ -21,7 +21,7 @@ const DEFAULTS: Department[] = [
 export const FALLBACK_DEPT = "desarrollo";
 
 export function normalize(text: string): string {
-  return text.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  return text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 }
 
 function field(text: string, name: string): string | null {

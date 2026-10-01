@@ -155,6 +155,7 @@ h1, h2, h3, p { margin: 0; }
 .seat-waiting .seat-caption { color: var(--call); }
 .seat-error .seat-caption { color: var(--error); }
 a.seat:hover .seat-caption { color: var(--text); }
+.seat-hat { font-family: var(--pixel); font-size: 9px; color: var(--text); }
 .overflow { font-family: var(--pixel); font-size: 11px; color: var(--muted); align-self: center; }
 
 /* sprites */

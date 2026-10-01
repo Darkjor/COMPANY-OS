@@ -9,6 +9,7 @@ import { openDb } from "../core/db.ts";
 import { ingestAll } from "../core/ingest.ts";
 import { log } from "../core/log.ts";
 import { loadDepartments } from "../core/departments.ts";
+import { hatDepartments } from "../core/hats.ts";
 import { overview, projectDetail, sessionDetail, type Ctx } from "../core/queries.ts";
 import { loadVaultProjects, readVaultText } from "../core/vault.ts";
 import { startWatcher } from "./watcher.ts";
@@ -24,7 +25,12 @@ function ctx(): Ctx {
   if (!ctxCache || Date.now() - ctxCache.at > 5000) {
     ctxCache = {
       at: Date.now(),
-      ctx: { vaultDir: VAULT_DIR, vault: loadVaultProjects(VAULT_DIR), departments: loadDepartments(VAULT_DIR) },
+      ctx: {
+        vaultDir: VAULT_DIR,
+        vault: loadVaultProjects(VAULT_DIR),
+        departments: loadDepartments(VAULT_DIR),
+        hats: hatDepartments(join(VAULT_DIR, "_empresa", "hats")),
+      },
     };
   }
   return ctxCache.ctx;

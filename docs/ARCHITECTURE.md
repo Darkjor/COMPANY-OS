@@ -3,7 +3,7 @@
 > Estado: fases 0.1–0.4 implementadas (observador + departamentos). Siguiente: 0.5 oficina visual.
 > Fecha: 2026-09-30
 >
-> Correr: `npm install` y luego `npm start` → http://127.0.0.1:4747 · `npm run scan` (resumen en
+> Correr: `npm install`, `npm run hats` (una vez) y luego `npm start` → http://127.0.0.1:4747 · `npm run scan` (resumen en
 > terminal) · `npm test`
 
 ## 1. Objetivo
@@ -204,6 +204,17 @@ crear un `.md` nuevo añade un departamento). Cada sesión se asigna así:
 
 Los subagentes heredan el departamento de su sesión. La pantalla **Proyecto** (`#/p/<key>`)
 muestra una sala por departamento: quién trabaja ahora, sesiones recientes y entregables del vault.
+
+### HATs
+
+Roles de agente definidos en el vault (`_empresa/hats/*.md`, formato de subagente de Claude Code
++ campo `departamento`). El repo trae 9 HATs base en `hats/` que siembran el vault la primera vez.
+`npm run hats` instala los HATs del vault en `~/.claude/agents/` (nunca sobrescribe un agente
+escrito a mano: solo los que llevan la marca `company-os:hat`). `npm run hats -- list` los muestra.
+
+El observador lee el mapa HAT → departamento: un subagente cuyo `agentType` es un HAT se sienta en
+la estación de ese departamento (con sombrero), aunque su sesión padre sea de otro departamento.
+Los subagentes sin HAT siguen dibujándose como drones junto a su agente principal.
 
 ## 11. Privacidad y seguridad
 

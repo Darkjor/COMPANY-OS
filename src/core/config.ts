@@ -14,6 +14,9 @@ export const DB_PATH =
 
 export const PORT = Number(process.env.COMPANY_OS_PORT ?? 4747);
 
+/** Where HATs are installed as Claude Code user-level subagents (available in every project). */
+export const AGENTS_DIR = process.env.COMPANY_OS_AGENTS_DIR ?? join(homedir(), ".claude", "agents");
+
 /** Status thresholds (ms). */
 export const WORKING_WINDOW_MS = 60_000;
 export const IDLE_AFTER_MS = 10 * 60_000;

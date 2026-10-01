@@ -1,6 +1,8 @@
 import { CLAUDE_PROJECTS_DIR, DB_PATH, VAULT_DIR } from "./config.ts";
 import { openDb } from "./db.ts";
+import { join } from "node:path";
 import { loadDepartments } from "./departments.ts";
+import { hatDepartments } from "./hats.ts";
 import { ingestAll } from "./ingest.ts";
 import { log } from "./log.ts";
 import { overview } from "./queries.ts";
@@ -19,7 +21,12 @@ log.info(`   sesiones=${counts.s} agentes=${counts.a} eventos=${counts.e} mensaj
 
 const ov = overview(
   db,
-  { vaultDir: VAULT_DIR, vault: loadVaultProjects(VAULT_DIR), departments: loadDepartments(VAULT_DIR) },
+  {
+    vaultDir: VAULT_DIR,
+    vault: loadVaultProjects(VAULT_DIR),
+    departments: loadDepartments(VAULT_DIR),
+    hats: hatDepartments(join(VAULT_DIR, "_empresa", "hats")),
+  },
   3650,
 );
 for (const p of ov.projects) {
