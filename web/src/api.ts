@@ -29,6 +29,28 @@ export interface SessionView {
   /** Only with status "waiting". Absent on servers that predate hooks. */
   waitingKind?: WaitingKind | null;
   deliverable?: Deliverable | null;
+  /** Only on a session that leads a team (members exclude the leader). */
+  team?: TeamView | null;
+}
+
+export interface TeamMember {
+  name: string;
+  hat: string | null;
+  department: string | null;
+  status: Status;
+  waitingKind: WaitingKind | null;
+  model: string | null;
+  current: string | null;
+  /** Present when the teammate runs in a session of its own. */
+  sessionId?: string;
+}
+
+export interface TeamView {
+  id: string;
+  name: string;
+  description?: string | null;
+  leaderSessionId: string;
+  members: TeamMember[];
 }
 
 export type WaitingKind = "permission" | "question" | "finished" | "delivered";
@@ -123,6 +145,21 @@ export interface AgentView {
   lastEventAt: string | null;
   tokens: Tokens;
   hatDepartment: string | null;
+  /** Backend 1d: absent on servers that predate it. */
+  performance?: AgentPerformance;
+}
+
+export interface AgentPerformance {
+  /** EXACT, from Claude Code's notification; null for the main agent and foreground agents. */
+  reportedTokens: number | null;
+  newContext: number;
+  cacheRead: number;
+  /** APPROXIMATE and undercounted. */
+  outputApprox: number;
+  toolCalls: number;
+  toolCap: number | null;
+  durationMs: number | null;
+  deliverables: { path: string; type: string; title: string; at: string }[];
 }
 
 export interface EventRow {
@@ -140,6 +177,8 @@ export interface SessionDetail {
   agents: AgentView[];
   events: EventRow[];
   files: { path: string; op: string; n: number; lastTs: string }[];
+  performance?: AgentPerformance;
+  deliverables?: Deliverable[];
 }
 
 /** Fetch JSON and refetch on every SSE "changed" event (throttled) plus a slow tick for status aging. */
@@ -235,3 +274,7 @@ export async function markSeen(path: string): Promise<void> {
     // Offline or server down: the local mark still dismisses it in this tab.
   }
 }
+
+/** A session link; `member` makes the session screen focus that teammate. */
+export const sessionHref = (id: string, member?: string | null) =>
+  `#/s/${encodeURIComponent(id)}${member ? `?m=${encodeURIComponent(member)}` : ""}`;

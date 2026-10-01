@@ -1,9 +1,18 @@
-import { deliverableHref, isLocallySeen, useSeenVersion, type CrewMember, type DeptSummary, type SessionView, type Status } from "./api.ts";
+import { deliverableHref, isLocallySeen, sessionHref, useSeenVersion, type CrewMember, type DeptSummary, type SessionView, type Status, type TeamMember } from "./api.ts";
 import { STATUS_LABEL, plural, timeAgo } from "./format.ts";
 import { Desk, Drone, Worker } from "./pixel/Sprites.tsx";
 import { reviewText } from "./ReviewBadge.tsx";
 import { useSeatTip } from "./SeatTip.tsx";
-import { SIGNAL_LABEL, signalOf, signalText, type Signal } from "./signals.ts";
+import { HAT_LABEL, SIGNAL_LABEL, signalOf, signalText, type Signal } from "./signals.ts";
+import { TeamStrip } from "./TeamStrip.tsx";
+import { crewCoveredByMembers, memberBlocking, roomTeams, seatedMembers, type TeamInfo } from "./teams.ts";
+
+/** Team mark of a seat: "★A" for the leader, "A" for a teammate. */
+export interface Tag {
+  letter: string;
+  leader: boolean;
+  teamName: string;
+}
 
 export const LIVE: ReadonlySet<Status> = new Set(["working", "subagents", "waiting", "error"]);
 
@@ -18,6 +27,18 @@ export function caption(s: SessionView, now: number, signal: Signal | null = sig
   if (signal) return `${signalText(signal)} · ${ago}`;
   if (s.status === "waiting") return `te espera · ${ago}`;
   return s.current ?? STATUS_LABEL[s.status];
+}
+
+function TeamTag({ tag }: { tag: Tag }) {
+  return (
+    <span className="team-tag" data-team={tag.letter} title={`${tag.leader ? "Líder del equipo" : "Equipo"} ${tag.letter}: ${tag.teamName}`}>
+      <span aria-hidden>
+        {tag.leader ? "★" : ""}
+        {tag.letter}
+      </span>
+      <span className="sr-only">{tag.leader ? `Líder del equipo ${tag.letter}` : `Equipo ${tag.letter}`}</span>
+    </span>
+  );
 }
 
 function TipBody({ s, signal, now, deptName }: { s: SessionView; signal: Signal | null; now: number; deptName?: string }) {
@@ -45,7 +66,7 @@ function TipBody({ s, signal, now, deptName }: { s: SessionView; signal: Signal 
   );
 }
 
-function Seat({ s, now, deptName }: { s: SessionView; now: number; deptName?: string }) {
+function Seat({ s, now, deptName, tag }: { s: SessionView; now: number; deptName?: string; tag?: Tag }) {
   const status: Status = s.status === "subagents" ? "working" : s.status;
   const drones = Math.min(s.drones, 4);
   const signal = signalOf(s, isLocallySeen);
@@ -57,6 +78,7 @@ function Seat({ s, now, deptName }: { s: SessionView; now: number; deptName?: st
       <a
         ref={ref}
         className={`seat seat-${s.status}${signal ? ` seat-sig-${signal}` : ""}`}
+        data-team={tag?.letter}
         href={toReport ?? `#/s/${s.id}`}
         onClick={(e) => {
           // Shift+click on a ready report opens the session instead of the reader.
@@ -68,6 +90,7 @@ function Seat({ s, now, deptName }: { s: SessionView; now: number; deptName?: st
         {...handlers}
         title={`${s.title ?? "Sesión"} · ${signal ? SIGNAL_LABEL[signal] : STATUS_LABEL[s.status]}${s.current ? ` · ${s.current}` : ""}`}
       >
+        {tag && <TeamTag tag={tag} />}
         <span className="seat-figure">
           <Worker
             seed={s.id}
@@ -112,9 +135,66 @@ function CrewSeat({ c }: { c: CrewMember }) {
   );
 }
 
-function Station({ dept, sessions, crew, now }: { dept: DeptSummary; sessions: SessionView[]; crew: CrewMember[]; now: number }) {
+/** A teammate: drawn as a worker wearing its HAT at its own department's desk (no drones, unlike subagents). */
+function MemberSeat({ info, m }: { info: TeamInfo; m: TeamMember }) {
+  const status: Status = m.status === "subagents" ? "working" : m.status;
+  const block = memberBlocking(m);
+  const signal: Signal | null = block ?? (m.status === "waiting" ? (m.waitingKind === "delivered" ? "delivered" : "finished") : null);
+  const who = m.hat ? HAT_LABEL(m.hat) : m.name;
+  const state = signal ? SIGNAL_LABEL[signal] : STATUS_LABEL[m.status].toUpperCase();
+  const { ref, handlers, tip } = useSeatTip(
+    <>
+      <b className="tip-head">{state}</b>
+      <span className="tip-title">{who}</span>
+      <span className="tip-meta">
+        {signal ? signalText(signal) : STATUS_LABEL[m.status].toLowerCase()} · equipo de «{info.team.name}»
+      </span>
+      {m.current && m.status === "working" && <span className="tip-meta">{m.current}</span>}
+      <span className="tip-hint">Clic: abrir la sesión del equipo</span>
+    </>,
+  );
+  return (
+    <>
+      <a
+        ref={ref}
+        className={`seat seat-${m.status}${signal ? ` seat-sig-${signal}` : ""}`}
+        data-team={info.letter}
+        href={sessionHref(info.leader.id, m.name)}
+        {...handlers}
+        title={`${who} · ${state.toLowerCase()} · equipo de «${info.team.name}»`}
+      >
+        <TeamTag tag={{ letter: info.letter, leader: false, teamName: info.team.name }} />
+        <span className="seat-figure">
+          <Worker seed={`${info.leader.id}/${m.name}`} model={m.model} status={status} signal={signal} hat={m.department} label={`${who}: ${state.toLowerCase()}`} />
+        </span>
+        <Desk lit={status === "working"} />
+        <span className="seat-caption">
+          {m.hat && <span className="seat-hat">{m.hat}</span>}{" "}
+          {signal ? signalText(signal) : m.status === "working" ? m.current ?? "trabajando" : STATUS_LABEL[m.status].toLowerCase()}
+        </span>
+      </a>
+      {tip}
+    </>
+  );
+}
+
+function Station({
+  dept,
+  sessions,
+  crew,
+  members,
+  tagFor,
+  now,
+}: {
+  dept: DeptSummary;
+  sessions: SessionView[];
+  crew: CrewMember[];
+  members: { info: TeamInfo; m: TeamMember }[];
+  tagFor: (sessionId: string) => Tag | undefined;
+  now: number;
+}) {
   const live = sessions.filter((s) => LIVE.has(s.status));
-  const seated = live.length + crew.length;
+  const seated = live.length + crew.length + members.length;
   return (
     <div className={`station ${seated ? "station-live" : ""}`}>
       <span className="plate" title={dept.name}>{deptCode(dept.name)}</span>
@@ -128,15 +208,20 @@ function Station({ dept, sessions, crew, now }: { dept: DeptSummary; sessions: S
         ) : (
           <>
             {live.slice(0, 4).map((s) => (
-              <Seat key={s.id} s={s} now={now} deptName={dept.name} />
+              <Seat key={s.id} s={s} now={now} deptName={dept.name} tag={tagFor(s.id)} />
+            ))}
+            {members.slice(0, 4).map(({ info, m }) => (
+              <MemberSeat key={`${info.leader.id}/${m.name}`} info={info} m={m} />
             ))}
             {crew.slice(0, 4).map((c) => (
               <CrewSeat key={c.id} c={c} />
             ))}
           </>
         )}
-        {(live.length > 4 || crew.length > 4) && (
-          <span className="overflow">+{Math.max(0, live.length - 4) + Math.max(0, crew.length - 4)}</span>
+        {(live.length > 4 || crew.length > 4 || members.length > 4) && (
+          <span className="overflow">
+            +{Math.max(0, live.length - 4) + Math.max(0, crew.length - 4) + Math.max(0, members.length - 4)}
+          </span>
         )}
       </div>
     </div>
@@ -160,6 +245,18 @@ export function Room({
   meta?: string;
 }) {
   useSeenVersion(); // marking a report as seen redraws the seats before the server round-trip
+  const teams = roomTeams(sessions);
+  const roomIds = new Set(sessions.map((x) => x.id));
+  const covered = crewCoveredByMembers(teams, roomIds);
+  const tags = new Map<string, Tag>();
+  for (const t of teams) {
+    tags.set(t.leader.id, { letter: t.letter, leader: true, teamName: t.team.name });
+    for (const m of t.team.members) if (m.sessionId) tags.set(m.sessionId, { letter: t.letter, leader: false, teamName: t.team.name });
+  }
+  const codeOf = (slug: string | null) => {
+    const d = slug ? departments.find((x) => x.slug === slug) : undefined;
+    return d ? deptCode(d.name) : slug ? deptCode(slug) : "—";
+  };
   const title = <span className="room-name">{name}</span>;
   return (
     <section className="room" aria-label={`Sala ${name}`}>
@@ -167,13 +264,22 @@ export function Room({
         {href ? <a href={href}>{title}</a> : title}
         {meta && <span className="room-meta">{meta}</span>}
       </header>
+      {teams.map((t) => (
+        <TeamStrip key={t.leader.id} info={t} codeOf={codeOf} />
+      ))}
       <div className="floor">
         {departments.map((d) => (
           <Station
             key={d.slug}
             dept={d}
             sessions={sessions.filter((s) => s.department === d.slug)}
-            crew={sessions.flatMap((s) => s.crew.filter((c) => c.department === d.slug))}
+            crew={sessions.flatMap((s) => s.crew.filter((c) => c.department === d.slug && !covered.has(c.id)))}
+            members={teams.flatMap((info) =>
+              seatedMembers(info, roomIds)
+                .filter((m) => m.department === d.slug)
+                .map((m) => ({ info, m })),
+            )}
+            tagFor={(id) => tags.get(id)}
             now={now}
           />
         ))}

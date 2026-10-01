@@ -5,6 +5,7 @@ import { Project } from "./Project.tsx";
 import { Reader } from "./Reader.tsx";
 import { Session } from "./Session.tsx";
 import "./styles.css";
+import "./bandeja.css";
 
 function useHash(): string {
   const [hash, setHash] = useState(window.location.hash);
@@ -38,7 +39,9 @@ class ErrorBoundary extends Component<{ children: ReactNode; resetKey: string },
 
 function App() {
   const hash = useHash();
-  const session = /^#\/s\/(.+)$/.exec(hash)?.[1];
+  const sessionMatch = /^#\/s\/([^?]+)(\?.*)?$/.exec(hash);
+  const session = sessionMatch?.[1];
+  const member = new URLSearchParams(sessionMatch?.[2] ?? "").get("m");
   const project = /^#\/p\/(.+)$/.exec(hash)?.[1];
   const doc = /^#\/d\/([^?]+)(\?.*)?$/.exec(hash);
   // Braces matter: newer Chromium returns a Promise from scrollTo, and React would call it as a cleanup.
@@ -59,7 +62,7 @@ function App() {
           {doc ? (
             <Reader key={doc[1]} path={decodeURIComponent(doc[1])} fromReady={/[?&]from=ready/.test(doc[2] ?? "")} />
           ) : session ? (
-            <Session id={decodeURIComponent(session)} />
+            <Session id={decodeURIComponent(session)} member={member} />
           ) : project ? (
             <Project projectKey={decodeURIComponent(project)} />
           ) : (

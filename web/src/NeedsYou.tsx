@@ -1,13 +1,16 @@
-import { deliverableHref, isLocallySeen, markSeen, useSeenVersion, type ProjectView, type SessionView } from "./api.ts";
+import { deliverableHref, isLocallySeen, markSeen, sessionHref, useSeenVersion, type ProjectView, type SessionView, type TeamMember } from "./api.ts";
 import { timeAgo } from "./format.ts";
 import { deptCode } from "./Office.tsx";
 import { DocIcon, Worker } from "./pixel/Sprites.tsx";
 import { HAT_LABEL, SIGNAL_LABEL, compareCalls, isBlocking, signalOf, type Signal } from "./signals.ts";
+import { memberBlocking, teamAlive } from "./teams.ts";
 
 export interface Call {
   s: SessionView;
   project: ProjectView;
   signal: Signal;
+  /** A teammate that is blocked; `s` is then the leader session, whose screen holds the teammate. */
+  member?: TeamMember;
 }
 
 /** Spec §1 order: error > pide permiso > te pregunta > informe listo > terminó; ties by who waited longest. */
@@ -21,12 +24,21 @@ export function collectCalls(projects: ProjectView[]): Call[] {
       if (signal === "finished" && s.waitingKind === "delivered") continue;
       calls.push({ s, project, signal });
     }
+    // Teammates blocked on the human. Those with a session of their own are already in the list above.
+    const ids = new Set(project.sessions.map((x) => x.id));
+    for (const s of project.sessions) {
+      if (!s.team || !teamAlive(s.team)) continue;
+      for (const m of s.team.members) {
+        const signal = memberBlocking(m);
+        if (signal && !(m.sessionId && ids.has(m.sessionId))) calls.push({ s, project, signal, member: m });
+      }
+    }
   }
   return calls.sort(compareCalls);
 }
 
 function CallCard({ call, now }: { call: Call; now: number }) {
-  const { s, project, signal } = call;
+  const { s, project, signal, member } = call;
   const dept = project.departments.find((d) => d.slug === s.department);
   const d = s.deliverable;
   const where = (
@@ -44,6 +56,26 @@ function CallCard({ call, now }: { call: Call; now: number }) {
   );
   const kind = <span className="call-kind">{SIGNAL_LABEL[signal]}</span>;
 
+  if (member && s.team) {
+    const who = member.hat ? HAT_LABEL(member.hat) : member.name;
+    const mdept = member.department ? project.departments.find((x) => x.slug === member.department) : undefined;
+    return (
+      <a className={`call call-${signal}`} href={sessionHref(s.id, member.name)}>
+        <Worker seed={`${s.id}/${member.name}`} model={member.model} status={member.status} signal={signal} scale={3} hat={member.department} />
+        <span className="call-body">
+          <span className="call-where">
+            {project.name}
+            {mdept && <span className="call-dept">{deptCode(mdept.name)}</span>}
+          </span>
+          {kind}
+          <span className="call-title">
+            {who} · equipo de «{s.team.name}»
+          </span>
+          {when}
+        </span>
+      </a>
+    );
+  }
   if (signal === "delivered" && d) {
     const hat = s.hat?.name ?? d.hat;
     return (
@@ -118,7 +150,7 @@ export function NeedsYou({ calls, now, working }: { calls: Call[]; now: number; 
       </span>
       <ol className="call-list">
         {calls.map((c) => (
-          <li key={`${c.s.id}`}>
+          <li key={`${c.s.id}${c.member ? `/${c.member.name}` : ""}`}>
             <CallCard call={c} now={now} />
           </li>
         ))}
