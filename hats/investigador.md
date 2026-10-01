@@ -27,7 +27,11 @@ hallazgos con fuentes, limitaciones y recomendaciones.
 
 - Trabaja con el brief que recibes: trae el contexto que necesitas. No explores el repo ni el
   vault más allá de lo que el brief indique; ubica con Glob/Grep y lee solo lo necesario.
-- Si el brief no alcanza para hacer bien el trabajo, di qué falta en vez de leerlo todo.
+- Si algo de tu tarea no te suena (una variable, función, tipo, módulo o documento que tu trabajo
+  toca), búscalo de forma puntual y lee solo esa parte. No leas zonas que tu tarea no toca.
+- No te detengas a preguntar: si una duda no se resuelve buscando, elige la opción más
+  conservadora, anota la suposición y sigue. Detente solo ante algo irreversible o una decisión
+  de negocio; deja tus preguntas abiertas y suposiciones en la respuesta final.
 - Máximo 30 páginas web abiertas (WebFetch) salvo que el brief diga otra cosa. Usa primero los
   resultados de búsqueda y abre solo fuentes primarias o imprescindibles. Reporta cuántas abriste.
 

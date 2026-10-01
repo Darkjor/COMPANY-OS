@@ -25,12 +25,19 @@ describe("planSpawn", () => {
     expect(p.warnings).toEqual([]);
   });
 
-  it("dev HATs run without Bash unless the human allows it", () => {
-    const noBash = planSpawn(dev, brief, { vaultDir: "V" });
-    expect(noBash.args[noBash.args.indexOf("--allowedTools") + 1]).not.toContain("Bash");
-    expect(noBash.warnings.join()).toMatch(/SIN Bash/);
-    const withBash = planSpawn(dev, brief, { vaultDir: "V", allowBash: true });
-    expect(withBash.args[withBash.args.indexOf("--allowedTools") + 1]).toContain("Bash");
+  it("dev HATs work like a senior: Bash allowed with no prompts, irreversible commands denied", () => {
+    const p = planSpawn(dev, brief, { vaultDir: "V" });
+    expect(p.args[p.args.indexOf("--allowedTools") + 1]).toContain("Bash");
+    expect(p.args).toEqual(expect.arrayContaining(["--disallowedTools", "Bash(git push *)", "Bash(rm -rf *)"]));
+    expect(p.warnings).toEqual([]);
+    const off = planSpawn(dev, brief, { vaultDir: "V", noBash: true });
+    expect(off.args[off.args.indexOf("--allowedTools") + 1]).not.toContain("Bash");
+    expect(off.args).not.toContain("--disallowedTools");
+  });
+
+  it("department HATs with a tools limit never get Bash", () => {
+    const p = planSpawn(investigador, brief, { vaultDir: "V" });
+    expect(p.args.join(" ")).not.toContain("Bash");
   });
 
   it("warns when the brief misses required sections and refuses an empty one", () => {

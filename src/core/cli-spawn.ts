@@ -6,7 +6,7 @@ import { loadHats } from "./hats.ts";
 import { log } from "./log.ts";
 import { SpawnRefused, findClaudeBinary, planSpawn } from "./spawn.ts";
 
-// Uso: npm run spawn -- <hat> <brief.md> [--model sonnet|opus] [--cwd <dir>] [--permitir-bash]
+// Uso: npm run spawn -- <hat> <brief.md> [--model sonnet|opus] [--cwd <dir>] [--sin-bash]
 const argv = process.argv.slice(2);
 const flag = (name: string) => {
   const i = argv.indexOf(name);
@@ -14,11 +14,11 @@ const flag = (name: string) => {
 };
 const model = flag("--model");
 const cwd = flag("--cwd") ?? process.cwd();
-const allowBash = argv.includes("--permitir-bash");
+const noBash = argv.includes("--sin-bash");
 const [hatName, briefPath] = argv.filter((a) => !a.startsWith("--"));
 
 if (!hatName || !briefPath) {
-  log.error("uso: npm run spawn -- <hat> <brief.md> [--model sonnet|opus] [--cwd <dir>] [--permitir-bash]");
+  log.error("uso: npm run spawn -- <hat> <brief.md> [--model sonnet|opus] [--cwd <dir>] [--sin-bash]");
   process.exit(1);
 }
 if (!existsSync(briefPath)) {
@@ -29,7 +29,7 @@ if (!existsSync(briefPath)) {
 const hats = loadHats(join(VAULT_DIR, "_empresa", "hats"));
 let plan;
 try {
-  plan = planSpawn(hats.find((h) => h.name === hatName), readFileSync(briefPath, "utf8"), { model, vaultDir: VAULT_DIR, allowBash });
+  plan = planSpawn(hats.find((h) => h.name === hatName), readFileSync(briefPath, "utf8"), { model, vaultDir: VAULT_DIR, noBash });
 } catch (err) {
   if (err instanceof SpawnRefused) {
     log.error(`lanzamiento rechazado: ${err.message}. HATs disponibles: ${hats.map((h) => h.name).join(", ")}`);

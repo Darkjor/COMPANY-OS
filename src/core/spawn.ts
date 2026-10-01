@@ -11,9 +11,30 @@ import type { Hat } from "./hats.ts";
 export interface SpawnOptions {
   model?: string;
   vaultDir: string;
-  /** Dev HATs have no `tools` limit; headless Bash is only allowed when the human says so. */
-  allowBash?: boolean;
+  /** Dev HATs work like a senior dev (Bash allowed, no prompts); this turns Bash off for one run. */
+  noBash?: boolean;
 }
+
+/**
+ * Hard limits for autonomous dev HATs: what is irreversible or leaves this PC needs the human.
+ * The agent is not interrupted by them: the command is denied and it reports it at the end.
+ * (Verified 2026-10-01 with Claude Code 2.1.286: denied commands do not run.)
+ */
+export const DENIED_COMMANDS = [
+  "Bash(git push *)",
+  "Bash(git push)",
+  "Bash(git reset --hard *)",
+  "Bash(git clean *)",
+  "Bash(rm -rf *)",
+  "Bash(vercel *)",
+  "Bash(npx vercel *)",
+  "Bash(npm publish *)",
+  "Bash(npm publish)",
+  "Bash(supabase db push *)",
+  "Bash(supabase db reset *)",
+  "Bash(npx supabase db push *)",
+  "Bash(npx supabase db reset *)",
+];
 
 export interface SpawnPlan {
   args: string[];
@@ -46,8 +67,8 @@ export function planSpawn(hat: Hat | undefined, brief: string, opts: SpawnOption
   if (missing.length) warnings.push(`al brief le faltan secciones: ${missing.join(", ")} (ver _empresa/plantillas/brief.md)`);
 
   let tools = hat.tools ? hat.tools.split(",").map((t) => t.trim()).filter(Boolean) : [...READ_ONLY_DEV_TOOLS];
-  if (!hat.tools && opts.allowBash) tools.push("Bash");
-  if (!hat.tools && !opts.allowBash) warnings.push("HAT sin límite de herramientas: corre SIN Bash (usa --permitir-bash para habilitarlo)");
+  const bash = !hat.tools && !opts.noBash; // HATs without a tools limit are the dev roles
+  if (bash) tools.push("Bash");
   tools = [...new Set(tools)];
 
   return {
@@ -59,6 +80,7 @@ export function planSpawn(hat: Hat | undefined, brief: string, opts: SpawnOption
       "--model", model,
       "--add-dir", opts.vaultDir,
       "--allowedTools", tools.join(" "),
+      ...(bash ? ["--disallowedTools", ...DENIED_COMMANDS] : []),
       "--permission-mode", "acceptEdits",
       "--output-format", "text",
     ],
