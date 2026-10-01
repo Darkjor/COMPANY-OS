@@ -191,7 +191,7 @@ export function ingestFile(db: DB, ref: TranscriptRef, opts: IngestOptions = {})
     );
 
     const insNote = db.prepare(
-      "INSERT OR IGNORE INTO task_notifications(session_id, task_id, tool_use_id, status, ts) VALUES(?,?,?,?,?)",
+      "INSERT OR IGNORE INTO task_notifications(session_id, task_id, tool_use_id, status, ts, subagent_tokens, tool_uses, duration_ms) VALUES(?,?,?,?,?,?,?,?)",
     );
     const insEvent = db.prepare(
       "INSERT OR IGNORE INTO events(id, agent_id, ts, kind, tool_name, tool_use_id, summary) VALUES(?,?,?,?,?,?,?)",
@@ -205,7 +205,10 @@ export function ingestFile(db: DB, ref: TranscriptRef, opts: IngestOptions = {})
          cache_read = excluded.cache_read, cache_create = excluded.cache_create`,
     );
     for (const p of parsed) {
-      if (p.ts) for (const n of p.notifications) insNote.run(ref.sessionId, n.taskId ?? "", n.toolUseId ?? "", n.status, p.ts);
+      if (p.ts) for (const n of p.notifications) {
+        const u = n.usage;
+        insNote.run(ref.sessionId, n.taskId ?? "", n.toolUseId ?? "", n.status, p.ts, u?.subagentTokens ?? null, u?.toolUses ?? null, u?.durationMs ?? null);
+      }
       for (const e of p.events) {
         insEvent.run(e.id, ref.agentId, e.ts, e.kind, e.toolName, e.toolUseId, e.summary);
         if (e.filePath && e.fileOp) insFile.run(ref.agentId, e.filePath, e.fileOp, e.ts);

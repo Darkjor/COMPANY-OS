@@ -131,7 +131,7 @@ CREATE INDEX IF NOT EXISTS idx_deliverables_project ON deliverables(project, upd
 
 export type DB = DatabaseSync;
 
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
 
 export function openDb(path: string): DB {
   if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
@@ -144,7 +144,7 @@ export function openDb(path: string): DB {
 
 /**
  * Transcript tables are an index: a migration may simply force a full re-read of the transcripts
- * (v5 backfilled deliverables; v6 fills agents.request_shape and task_notifications). hook_events / hook_state / deliverables are NOT rebuildable
+ * (v5 backfilled deliverables; v6 fills agents.request_shape and task_notifications; v7 refills task_notifications with the <usage> figures). hook_events / hook_state / deliverables are NOT rebuildable
  * from transcripts once Claude Code cleans them up, so migrations must never drop or reset them.
  */
 function migrate(db: DB): void {
@@ -154,10 +154,14 @@ function migrate(db: DB): void {
   addColumn(db, "agents", "request_shape", "TEXT");
   addColumn(db, "hook_events", "task_id", "TEXT");
   addColumn(db, "deliverables", "seen_at", "TEXT");
+  addColumn(db, "task_notifications", "subagent_tokens", "INTEGER");
+  addColumn(db, "task_notifications", "tool_uses", "INTEGER");
+  addColumn(db, "task_notifications", "duration_ms", "INTEGER");
 
   const { user_version: v } = db.prepare("PRAGMA user_version").get() as { user_version: number };
   if (v >= SCHEMA_VERSION) return;
   db.exec("UPDATE sessions SET automated = 0"); // v2 misdetected interactive sessions; recompute
+  db.exec("DELETE FROM task_notifications"); // rebuilt by the re-ingest below, now with <usage>
   db.exec("DELETE FROM ingest_state"); // re-ingest everything so old sessions get the new columns right
   db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
 }

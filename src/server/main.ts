@@ -9,7 +9,7 @@ import { ingestAll } from "../core/ingest.ts";
 import { log } from "../core/log.ts";
 import { startMaintenance } from "../core/maintenance.ts";
 import { loadDepartments } from "../core/departments.ts";
-import { hatDepartments } from "../core/hats.ts";
+import { hatDepartments, hatToolCaps } from "../core/hats.ts";
 import { type Ctx } from "../core/queries.ts";
 import { loadTeams } from "../core/teams.ts";
 import { loadVaultProjects } from "../core/vault.ts";
@@ -32,6 +32,7 @@ function ctx(): Ctx {
         vault: loadVaultProjects(VAULT_DIR),
         departments: loadDepartments(VAULT_DIR),
         hats: hatDepartments(join(VAULT_DIR, "_empresa", "hats")),
+        toolCaps: hatToolCaps(join(VAULT_DIR, "_empresa", "hats")),
         teams: loadTeams(TEAMS_DIR),
       },
     };

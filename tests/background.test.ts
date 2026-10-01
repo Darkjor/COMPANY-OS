@@ -125,7 +125,7 @@ describe("background subagents", () => {
 describe("extractNotifications", () => {
   it("reads task-id, tool-use-id and status; ignores other text", () => {
     const t = "<task-notification>\n<task-id>aa1</task-id>\n<tool-use-id>toolu_1</tool-use-id>\n<status>completed</status>\n</task-notification>";
-    expect(extractNotifications(t)).toEqual([{ taskId: "aa1", toolUseId: "toolu_1", status: "completed" }]);
+    expect(extractNotifications(t)).toEqual([{ taskId: "aa1", toolUseId: "toolu_1", status: "completed", usage: null }]);
     expect(extractNotifications("hola")).toEqual([]);
   });
 });

@@ -120,3 +120,19 @@ export function installHats(defaultsDir: string, vaultHatsDir: string, agentsDir
 export function hatDepartments(vaultHatsDir: string): Map<string, string> {
   return new Map(loadHats(vaultHatsDir).flatMap((h) => (h.department ? [[h.name, h.department] as const] : [])));
 }
+
+/** The call cap a HAT's body states: `**Tope de llamadas a herramientas: N**`. Null when absent. */
+export function parseToolCap(body: string): number | null {
+  const m = /Tope de llamadas a herramientas:\s*(\d{1,4})/i.exec(body);
+  return m ? Number(m[1]) : null;
+}
+
+/** HAT name → its tool-call cap (only HATs that state one). */
+export function hatToolCaps(vaultHatsDir: string): Map<string, number> {
+  return new Map(
+    loadHats(vaultHatsDir).flatMap((h) => {
+      const cap = parseToolCap(h.body);
+      return cap === null ? [] : [[h.name, cap] as const];
+    }),
+  );
+}

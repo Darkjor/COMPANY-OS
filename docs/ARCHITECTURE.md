@@ -117,6 +117,25 @@ Riesgo: el formato **no es una API pública** y puede cambiar entre versiones de
 Mitigación: el parser ignora campos desconocidos, guarda `version` de cada evento, y tiene
 tests con muestras reales anonimizadas.
 
+### 3.5 Consumo y desempeño por agente (`performance`)
+
+`GET /api/sessions/:id` devuelve `agents[].performance` y un `performance` de sesión (agente principal incluido).
+Qué número es exacto y cuál aproximado:
+
+| Campo | Fuente | Fiabilidad |
+|---|---|---|
+| `reportedTokens` | `<usage><subagent_tokens>` del `<task-notification>` en el transcript de la sesión madre (tabla `task_notifications`). Es input + cache creation + salida real; **no** incluye lecturas de caché | **Exacto** (lo reporta Claude Code). `null` si el agente no tiene notificación (agente principal, subagentes en primer plano). En la sesión: suma de los subagentes que lo tienen |
+| `newContext` | JSONL: `input + cache_creation` | Fiable (solo en la sesión de ese agente) |
+| `cacheRead` | JSONL: lecturas de caché | Fiable, es lo que dice el JSONL; no entra en `reportedTokens` |
+| `outputApprox` | JSONL: `output_tokens` | **Aproximado y subcontado**: Claude Code escribe el `output_tokens` del *inicio* del stream (p. ej. 8 en cada línea), no el final. Para el gasto real usa `reportedTokens` |
+| `toolCalls` | `tool_uses` de la notificación; si no hay, conteo de `tool_use` en el JSONL | Exacto con notificación; sin ella, exacto salvo líneas aún sin leer |
+| `toolCap` | Línea `**Tope de llamadas a herramientas: N**` del HAT en el vault (`_empresa/hats/<hat>.md`); `null` si no hay HAT o no declara tope | Es una instrucción al agente, no un límite que Claude Code imponga |
+| `durationMs` | `duration_ms` de la notificación; si no, último − primer evento del agente | Exacto con notificación; sin ella, aproximado (no incluye esperas antes del primer evento) |
+| `deliverables` | Archivos del vault que ese agente escribió/editó (`files_touched` ∩ `deliverables`) | Lo que el transcript registra; ediciones por Bash no se ven |
+
+De la notificación solo se guardan los tres números del `<usage>`; el texto de `<result>` nunca se almacena.
+Migración v7: vacía `task_notifications` y fuerza re-ingest para rellenar las columnas nuevas.
+
 ## 4. Arquitectura
 
 ```text

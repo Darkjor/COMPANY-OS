@@ -2,7 +2,7 @@ import { CLAUDE_PROJECTS_DIR, DB_PATH, VAULT_DIR } from "./config.ts";
 import { openDb } from "./db.ts";
 import { join } from "node:path";
 import { loadDepartments } from "./departments.ts";
-import { hatDepartments } from "./hats.ts";
+import { hatDepartments, hatToolCaps } from "./hats.ts";
 import { ingestAll } from "./ingest.ts";
 import { log } from "./log.ts";
 import { overview } from "./queries.ts";
@@ -26,6 +26,7 @@ const ov = overview(
     vault: loadVaultProjects(VAULT_DIR),
     departments: loadDepartments(VAULT_DIR),
     hats: hatDepartments(join(VAULT_DIR, "_empresa", "hats")),
+    toolCaps: hatToolCaps(join(VAULT_DIR, "_empresa", "hats")),
   },
   3650,
 );

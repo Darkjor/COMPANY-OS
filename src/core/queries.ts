@@ -1,7 +1,7 @@
 import { IDLE_AFTER_MS, WAITING_TTL_MS } from "./config.ts";
 import type { DB } from "./db.ts";
 import { classifySession, type Department } from "./departments.ts";
-import { latestDeliverable, listDeliverables, type Deliverable } from "./deliverables.ts";
+import { classifyDeliverable, latestDeliverable, listDeliverables, type Deliverable } from "./deliverables.ts";
 import { freshHookState, hookStates, REASON_LABEL, turnStartOf, type HookReason } from "./hooks.ts";
 import { buildTeam, type TeamConfig, type TeamView } from "./teams.ts";
 import { listDepartmentFiles, resolveProject, type VaultEntry, type VaultProject } from "./vault.ts";
@@ -13,6 +13,8 @@ export interface Ctx {
   departments: Department[];
   /** HAT name → department slug (from the vault's HAT library). */
   hats: Map<string, string>;
+  /** HAT name → tool-call cap from its `Tope de llamadas a herramientas: N` line (optional). */
+  toolCaps?: Map<string, number>;
   /** Agent teams read from ~/.claude/teams (optional: tests and callers without teams omit it). */
   teams?: TeamConfig[];
 }
@@ -389,10 +391,118 @@ export function projectDetail(db: DB, ctx: Ctx, key: string, now = Date.now()) {
   return { project: { ...project, sessions: undefined }, departments, vaultDir: vp?.dir ?? null };
 }
 
+/** A deliverable as shown in the performance panel. */
+export interface PerformanceDeliverable {
+  path: string;
+  type: Deliverable["type"];
+  title: string;
+  at: string;
+}
+
+/**
+ * What an agent cost and delivered. Exact vs approximate (see docs/ARCHITECTURE.md):
+ * - reportedTokens: EXACT, from Claude Code's task-notification (input + cache creation + real output; no cache reads). Null when the agent has no notification (main agent, foreground agents).
+ * - newContext / cacheRead: from the JSONL, reliable.
+ * - outputApprox: from the JSONL, UNDERCOUNTED (Claude Code logs the output_tokens of the start of the stream).
+ */
+export interface AgentPerformance {
+  reportedTokens: number | null;
+  newContext: number;
+  cacheRead: number;
+  outputApprox: number;
+  toolCalls: number;
+  toolCap: number | null;
+  durationMs: number | null;
+  deliverables: PerformanceDeliverable[];
+}
+
+const spanMs = (from: string | null, to: string | null): number | null => {
+  const a = from ? Date.parse(from) : NaN;
+  const b = to ? Date.parse(to) : NaN;
+  return Number.isNaN(a) || Number.isNaN(b) ? null : Math.max(0, b - a);
+};
+
+const asPerf = (d: Deliverable): PerformanceDeliverable => ({ path: d.path, type: d.type, title: d.title, at: d.at });
+
+/** Per-agent performance (by agent id) plus the session total (main agent included). */
+function buildPerformance(db: DB, ctx: Ctx, row: SessionRow, agents: AgentView[]) {
+  const rows = db
+    .prepare("SELECT id, kind, agent_type, spawn_tool_use_id, started_at, last_event_at FROM agents WHERE session_id = ?")
+    .all(row.id) as { id: string; kind: string; agent_type: string | null; spawn_tool_use_id: string | null; started_at: string | null; last_event_at: string | null }[];
+  const calls = new Map(
+    (db
+      .prepare(
+        `SELECT e.agent_id id, COUNT(*) n FROM events e JOIN agents a ON a.id = e.agent_id
+         WHERE a.session_id = ? AND e.kind = 'tool_use' GROUP BY e.agent_id`,
+      )
+      .all(row.id) as { id: string; n: number }[]).map((r) => [r.id, r.n]),
+  );
+  const notes = db
+    .prepare(
+      `SELECT task_id, tool_use_id, subagent_tokens, tool_uses, duration_ms FROM task_notifications
+       WHERE session_id = ? AND (subagent_tokens IS NOT NULL OR tool_uses IS NOT NULL OR duration_ms IS NOT NULL)
+       ORDER BY ts, rowid`,
+    )
+    .all(row.id) as { task_id: string; tool_use_id: string; subagent_tokens: number | null; tool_uses: number | null; duration_ms: number | null }[];
+  const touched = db
+    .prepare(
+      `SELECT f.agent_id id, f.path FROM files_touched f JOIN agents a ON a.id = f.agent_id
+       WHERE a.session_id = ? AND f.op IN ('write','edit') ORDER BY f.ts`,
+    )
+    .all(row.id) as { id: string; path: string }[];
+  const delivered = new Map(listDeliverables(db, ctx.vaultDir, { session: row.id, limit: 500 }).map((d) => [d.path, d]));
+
+  const perAgent: Record<string, AgentPerformance> = {};
+  for (const a of agents) {
+    const r = rows.find((x) => x.id === a.id);
+    const taskId = a.id.slice(row.id.length + 1).replace(/^agent-/, "");
+    // Latest notification wins (a resumed agent notifies again).
+    const n = a.kind === "subagent"
+      ? notes.filter((x) => (r?.spawn_tool_use_id && x.tool_use_id === r.spawn_tool_use_id) || (taskId && x.task_id === taskId)).pop()
+      : undefined;
+    const paths = new Set<string>();
+    const mine: PerformanceDeliverable[] = [];
+    for (const t of touched) {
+      if (t.id !== a.id) continue;
+      const c = classifyDeliverable(ctx.vaultDir, t.path);
+      const d = c ? delivered.get(c.path) : undefined;
+      if (d && !paths.has(d.path)) {
+        paths.add(d.path);
+        mine.push(asPerf(d));
+      }
+    }
+    const hat = a.kind === "main" ? row.agent_setting : r?.agent_type ?? null;
+    perAgent[a.id] = {
+      reportedTokens: n?.subagent_tokens ?? null,
+      newContext: a.tokens.input + a.tokens.cacheCreate,
+      cacheRead: a.tokens.cacheRead,
+      outputApprox: a.tokens.output,
+      toolCalls: n?.tool_uses ?? calls.get(a.id) ?? 0,
+      toolCap: hat ? ctx.toolCaps?.get(hat) ?? null : null,
+      durationMs: n?.duration_ms ?? spanMs(r?.started_at ?? null, r?.last_event_at ?? null),
+      deliverables: mine,
+    };
+  }
+  const all = Object.values(perAgent);
+  const reported = all.filter((x) => x.reportedTokens !== null);
+  const total: AgentPerformance = {
+    reportedTokens: reported.length ? reported.reduce((n, x) => n + (x.reportedTokens ?? 0), 0) : null,
+    newContext: all.reduce((n, x) => n + x.newContext, 0),
+    cacheRead: all.reduce((n, x) => n + x.cacheRead, 0),
+    outputApprox: all.reduce((n, x) => n + x.outputApprox, 0),
+    toolCalls: all.reduce((n, x) => n + x.toolCalls, 0),
+    toolCap: null,
+    durationMs: spanMs(row.started_at, row.last_event_at),
+    deliverables: [...delivered.values()].slice(0, 50).map(asPerf),
+  };
+  return { perAgent, total };
+}
+
 export function sessionDetail(db: DB, ctx: Ctx, sessionId: string, limit = 300, now = Date.now()) {
   const row = db.prepare("SELECT * FROM sessions WHERE id = ?").get(sessionId) as SessionRow | undefined;
   if (!row) return null;
   const agents = buildAgents(db, sessionId, tokensByAgent(db), now, ctx.hats);
+  const perf = buildPerformance(db, ctx, row, agents);
   const events = db
     .prepare(
       `SELECT e.id, e.agent_id agentId, e.ts, e.kind, e.tool_name toolName, e.summary
@@ -410,7 +520,8 @@ export function sessionDetail(db: DB, ctx: Ctx, sessionId: string, limit = 300, 
   return {
     session: toSessionView(db, row, agents, ctx, now),
     project: resolveProject(ctx.vault, row.cwd, row.project_dir),
-    agents,
+    agents: agents.map((a) => ({ ...a, performance: perf.perAgent[a.id] })),
+    performance: perf.total,
     events,
     files,
     deliverables: listDeliverables(db, ctx.vaultDir, { session: sessionId, limit: 50 }),

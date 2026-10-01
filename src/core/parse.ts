@@ -46,17 +46,38 @@ export interface ParsedLine {
   notifications: ParsedNotification[];
 }
 
+/** `<usage>` of a task-notification: the exact figures Claude Code reports for a finished subagent. */
+export interface NotificationUsage {
+  /** input + cache creation + real output (cache reads NOT included). */
+  subagentTokens: number | null;
+  toolUses: number | null;
+  durationMs: number | null;
+}
+
 export interface ParsedNotification {
   taskId: string | null;
   toolUseId: string | null;
   status: string;
+  usage: NotificationUsage | null;
 }
 
 const NOTIFICATION_RE = /<task-notification>([\s\S]*?)<\/task-notification>/g;
 const tag = (body: string, name: string): string | null =>
-  new RegExp(`<${name}>\s*([^<]{1,200}?)\s*</${name}>`).exec(body)?.[1] ?? null;
+  new RegExp(String.raw`<${name}>\s*([^<]{1,200}?)\s*</${name}>`).exec(body)?.[1] ?? null;
 
-/** Pull the id/status fields out of `<task-notification>` blocks. Result text is never kept. */
+function count(body: string, name: string): number | null {
+  const v = tag(body, name);
+  return v && /^\d{1,15}$/.test(v) ? Number(v) : null;
+}
+
+function usageOf(body: string): NotificationUsage | null {
+  const block = /<usage>([\s\S]*?)<\/usage>/.exec(body)?.[1];
+  if (!block) return null;
+  const u = { subagentTokens: count(block, "subagent_tokens"), toolUses: count(block, "tool_uses"), durationMs: count(block, "duration_ms") };
+  return u.subagentTokens === null && u.toolUses === null && u.durationMs === null ? null : u;
+}
+
+/** Pull the id/status/usage fields out of `<task-notification>` blocks. Result text is never kept. */
 export function extractNotifications(text: string): ParsedNotification[] {
   if (!text.includes("<task-notification>")) return [];
   const out: ParsedNotification[] = [];
@@ -64,7 +85,7 @@ export function extractNotifications(text: string): ParsedNotification[] {
     const status = tag(m[1], "status");
     const taskId = tag(m[1], "task-id");
     const toolUseId = tag(m[1], "tool-use-id");
-    if (status && (taskId || toolUseId)) out.push({ taskId, toolUseId, status });
+    if (status && (taskId || toolUseId)) out.push({ taskId, toolUseId, status, usage: usageOf(m[1]) });
   }
   return out;
 }
