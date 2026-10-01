@@ -1,5 +1,6 @@
 import type { ReactElement, ReactNode } from "react";
 import type { Status } from "../api.ts";
+import type { Signal } from "../signals.ts";
 import { modelTier } from "../format.ts";
 
 /**
@@ -72,6 +73,9 @@ const DESK = [
   ".d..............d.",
 ];
 
+// 6 × 8 sheet of paper ("informe listo"): p = paper, i = ink lines.
+const DOC = ["pppp..", "ppppp.", "pppppp", "piiiip", "pppppp", "piiiip", "pppppp", "pppppp"];
+
 // 5 × 5 subagent drone.
 const DRONE = [".ccc.", "cwcwc", "ccccc", ".c.c.", "c...c"];
 
@@ -131,6 +135,7 @@ export function Worker({
   scale = 4,
   label,
   hat,
+  signal,
 }: {
   seed: string;
   model: string | null;
@@ -139,6 +144,8 @@ export function Worker({
   label?: string;
   /** Department slug of the agent's HAT: draws a hat in that department's color. */
   hat?: string | null;
+  /** Why the agent is stopped: hand up only when blocked on the human; paper/OK stay seated. */
+  signal?: Signal | null;
 }) {
   const h = hash(seed);
   const palette: Palette = {
@@ -148,19 +155,38 @@ export function Worker({
     b: SHIRT[modelTier(model)],
     k: hat ? HAT_COLOR[hat] ?? "oklch(0.60 0.03 70)" : "transparent",
   };
-  const base = status === "waiting" ? HAND_UP : SEATED;
+  // Without a signal, "waiting" keeps the legacy hand-up + "!" so older servers still render.
+  const sig: Signal | null = signal ?? (status === "waiting" ? "permission" : status === "error" ? "error" : null);
+  const base = sig === "permission" || sig === "question" ? HAND_UP : SEATED;
   const grid = hat ? overlay(base, HAT) : base;
   return (
-    <span className={`worker-sprite pose-${status}`}>
+    <span className={`worker-sprite pose-${sig ?? status}`}>
       <Svg w={12} h={12} scale={scale} label={label}>
         <Pixels grid={grid} palette={palette} />
       </Svg>
-      {(status === "waiting" || status === "error") && (
-        <span className={`bubble bubble-${status}`} aria-hidden>
-          {status === "waiting" ? "!" : "×"}
+      {sig === "delivered" ? (
+        <span className="bubble-doc" aria-hidden>
+          <DocIcon scale={Math.max(2, Math.round(scale / 2))} />
         </span>
+      ) : (
+        sig && (
+          <span className={`bubble bubble-${sig}`} aria-hidden>
+            {BUBBLE_GLYPH[sig]}
+          </span>
+        )
       )}
     </span>
+  );
+}
+
+const BUBBLE_GLYPH: Record<Exclude<Signal, "delivered">, string> = { error: "×", permission: "!", question: "?", finished: "OK" };
+
+/** The paper sheet that floats over the head of an agent that delivered something. */
+export function DocIcon({ scale = 2 }: { scale?: number }) {
+  return (
+    <Svg w={6} h={8} scale={scale}>
+      <Pixels grid={DOC} palette={{ p: "oklch(0.93 0.012 80)", i: "oklch(0.24 0.04 70)" }} />
+    </Svg>
   );
 }
 

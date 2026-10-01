@@ -110,6 +110,44 @@ h1, h2, h3, p { margin: 0; }
 .call-where { display: flex; gap: 8px; align-items: center; font-weight: 600; }
 .call-dept { font-family: var(--pixel); font-size: 10px; color: var(--muted); }
 .call-title { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.call-kind { font-family: var(--pixel); font-size: 10px; color: var(--call); letter-spacing: 0.04em; margin-top: 2px; }
+.call-error .call-kind { color: var(--error); }
+.call-finished .call-kind { color: var(--muted); }
+.call-finished:hover { box-shadow: inset 0 0 0 2px var(--line-strong); }
+.calls-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.calls-chip { display: inline-flex; align-items: center; gap: 8px; padding: 2px 8px; font-family: var(--mono); font-size: 12px; color: var(--text); box-shadow: inset 0 0 0 1px var(--line-strong); background: var(--bg); }
+.calls-chip svg { display: block; }
+/* Only reports waiting: no amber, the bar goes neutral. */
+.calls-papers { background: var(--surface); box-shadow: inset 0 0 0 2px var(--line-strong); }
+.calls-papers .calls-title { color: var(--text); }
+.calls-count-paper { background: var(--text); color: var(--call-ink); }
+.call-delivered { position: relative; box-shadow: inset 0 0 0 2px var(--line-strong); }
+.call-delivered:hover { box-shadow: inset 0 0 0 2px var(--text); transform: translateY(-2px); }
+.call-delivered .call-kind { color: var(--text); }
+.call-delivered .call-when { color: var(--muted); }
+.call-art { flex: none; margin-right: 10px; }
+.call-stretch { color: var(--text); font-weight: 500; }
+.call-stretch::after { content: ""; position: absolute; inset: 0; }
+.call-actions { display: flex; gap: 8px; align-items: center; margin-top: 8px; position: relative; z-index: 1; }
+.call-open, .call-seen { display: inline-flex; align-items: center; justify-content: center; min-height: 36px; padding: 0 12px; font-size: 13px; }
+.call-open { background: var(--text); color: var(--call-ink); font-weight: 600; }
+.call-open:hover { background: var(--call); }
+.call-seen { color: var(--muted); text-decoration: underline; text-underline-offset: 3px; }
+.call-seen:hover { color: var(--text); }
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* seat hover / focus card (rendered in a portal, see SeatTip.tsx) */
+.seat-tip {
+  position: fixed; z-index: 20; transform: translateY(-100%); pointer-events: none;
+  display: flex; flex-direction: column; gap: 3px; padding: 10px 12px;
+  background: var(--bg); box-shadow: inset 0 0 0 2px var(--line-strong); clip-path: var(--notch);
+}
+.seat-tip-below { transform: none; }
+.tip-head { font-family: var(--pixel); font-size: 10px; font-weight: 400; color: var(--text); letter-spacing: 0.04em; }
+.tip-title { font-weight: 600; font-size: 13px; line-height: 1.3; }
+.tip-meta { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.tip-hint { margin-top: 4px; color: var(--dim); font-family: var(--mono); font-size: 10.5px; }
+a.seat { position: relative; }
 .call-when { font-family: var(--mono); font-size: 11.5px; color: var(--call); }
 .call-error .call-when { color: var(--error); }
 
@@ -152,7 +190,9 @@ h1, h2, h3, p { margin: 0; }
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .seat-working .seat-caption, .seat-subagents .seat-caption { color: var(--work); }
-.seat-waiting .seat-caption { color: var(--call); }
+.seat-waiting .seat-caption, .seat-sig-permission .seat-caption, .seat-sig-question .seat-caption { color: var(--call); }
+.seat-sig-delivered .seat-caption { color: var(--text); }
+.seat-sig-finished .seat-caption { color: var(--muted); }
 .seat-error .seat-caption { color: var(--error); }
 a.seat:hover .seat-caption { color: var(--text); }
 .seat-hat { font-family: var(--pixel); font-size: 9px; color: var(--text); }
@@ -169,8 +209,13 @@ a.seat:hover .seat-caption { color: var(--text); }
   font-family: var(--pixel); font-size: 12px; line-height: 1;
   animation: hop 1.1s steps(2) infinite;
 }
-.bubble-waiting { background: var(--call); color: var(--call-ink); }
+.bubble-waiting, .bubble-permission, .bubble-question { background: var(--call); color: var(--call-ink); }
 .bubble-error { background: var(--error); color: var(--bg); }
+/* Calm signals: the paper sheet and "OK" never hop (amber means "blocked without you"). */
+.bubble-finished { background: var(--surface-2); color: var(--muted); box-shadow: inset 0 0 0 1px var(--line-strong); animation: none; font-size: 10px; }
+.bubble-doc { position: absolute; top: -20px; right: -8px; display: inline-flex; filter: drop-shadow(0 1px 0 var(--bg)); }
+.bubble-doc svg { display: block; }
+.pose-delivered svg, .pose-finished svg { filter: none; }
 .desk-sprite { display: inline-flex; }
 .desk-sprite svg { display: block; }
 .desk-lit svg { filter: drop-shadow(0 -3px 8px color-mix(in oklch, var(--work) 40%, transparent)); animation: flicker 2.4s steps(1) infinite; }
@@ -275,6 +320,9 @@ button.line-link:disabled { color: var(--muted); }
   .top-sub { display: none; }
   .hud-tokens { margin-left: 0; }
   .call { min-width: 0; max-width: none; width: 100%; }
+  .call-open, .call-seen { min-height: 44px; }
+  .call-actions { flex-wrap: wrap; }
+  .calls { padding: 14px 14px 16px; }
   .call-list li { width: 100%; }
   .floor { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .seat { width: 100%; }

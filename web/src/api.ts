@@ -26,6 +26,29 @@ export interface SessionView {
   hat: { name: string; department: string } | null;
   crew: CrewMember[];
   drones: number;
+  /** Only with status "waiting". Absent on servers that predate hooks. */
+  waitingKind?: WaitingKind | null;
+  deliverable?: Deliverable | null;
+}
+
+export type WaitingKind = "permission" | "question" | "finished" | "delivered";
+export type DeliverableType = "para-direccion" | "informe" | "revision" | "plan" | "brief" | "otro";
+export type ReviewVerdict = "aprobado" | "con-correcciones" | "rechazado" | "sin-revisar";
+
+export interface Deliverable {
+  /** Vault-relative, "/"-separated. */
+  path: string;
+  type: DeliverableType;
+  title: string;
+  at: string;
+  hat: string | null;
+  review: ReviewVerdict | null;
+  name: string;
+  project: string;
+  department: string;
+  sessionId: string | null;
+  createdAt: string;
+  seenAt: string | null;
 }
 
 export interface CrewMember {
@@ -171,4 +194,44 @@ export function useNow(intervalMs = 5000): number {
     return () => window.clearInterval(t);
   }, [intervalMs]);
   return now;
+}
+
+export const deliverableHref = (path: string, fromReady = false) =>
+  `#/d/${encodeURIComponent(path)}${fromReady ? "?from=ready" : ""}`;
+
+/* "Visto" lives in the backend; this module-level set only makes the UI react before the SSE refetch lands. */
+const locallySeen = new Set<string>();
+const seenListeners = new Set<() => void>();
+let seenVersion = 0;
+
+export function isLocallySeen(path: string): boolean {
+  return locallySeen.has(path);
+}
+
+/** Re-renders the caller whenever something is marked seen. */
+export function useSeenVersion(): number {
+  const [, setV] = useState(0);
+  useEffect(() => {
+    const on = () => setV((v) => v + 1);
+    seenListeners.add(on);
+    return () => void seenListeners.delete(on);
+  }, []);
+  return seenVersion;
+}
+
+export async function markSeen(path: string): Promise<void> {
+  locallySeen.add(path);
+  seenVersion++;
+  seenListeners.forEach((fn) => fn());
+  try {
+    const res = await fetch("/api/deliverables/seen", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path }),
+    });
+    // 404 = not a known deliverable: nothing to persist, keep the local mark for this tab.
+    if (!res.ok && res.status !== 404) throw new Error(`HTTP ${res.status}`);
+  } catch {
+    // Offline or server down: the local mark still dismisses it in this tab.
+  }
 }
