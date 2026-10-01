@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CrewMember, SessionView, TeamMember, TeamView } from "../web/src/api.ts";
-import { fmtDuration, fmtInt, fmtK, isOverCap, tokenCell } from "../web/src/perf.ts";
+import { fmtDuration, fmtInt, fmtK, isOverCap, tokenCell, totalTokenCell } from "../web/src/perf.ts";
+import { signalOf } from "../web/src/signals.ts";
 import { citedReviewPath, followUpOf, reviewCandidate, reviewVerdictFromDoc } from "../web/src/readerDoc.ts";
 import { crewCoveredByMembers, memberBlocking, memberGlyph, roomTeams, seatedMembers, teamAlive } from "../web/src/teams.ts";
 
@@ -134,5 +135,29 @@ describe("revisión de un informe", () => {
     expect(reviewVerdictFromDoc("## 2. Veredicto: RECHAZADO")).toBe("rechazado");
     expect(reviewVerdictFromDoc("# R\n\n```\n## 1. Veredicto: APROBADO\n```\n")).toBeNull();
     expect(reviewVerdictFromDoc("# R\n\nsin veredicto")).toBeNull();
+  });
+});
+
+describe("correcciones del QA (3c)", () => {
+  const del = { path: "Proyectos/p/research/x/para-direccion.md", at: "2026-10-01T10:00:00Z", seenAt: null } as never;
+  const sess = (over: Record<string, unknown>) => ({ status: "waiting", waitingKind: "delivered", deliverable: del, ...over }) as unknown as SessionView;
+
+  it("una sesión terminada con informe sin ver sigue como 'informe listo' y, vista, deja de pedirse", () => {
+    expect(signalOf(sess({}))).toBe("delivered");
+    expect(signalOf(sess({ status: "done" }))).toBe("delivered");
+    expect(signalOf(sess({ status: "idle" }))).toBe("delivered");
+    expect(signalOf(sess({ status: "done" }), () => true)).toBeNull();
+    expect(signalOf(sess({}), () => true)).toBe("finished");
+    expect(signalOf(sess({ status: "working" }))).toBeNull();
+  });
+
+  it("el total mezcla exactos y aproximados y lo dice con ≈", () => {
+    const exact = { reportedTokens: 900_000, newContext: 0, outputApprox: 0 };
+    const main = { reportedTokens: null, newContext: 400_000, outputApprox: 40_000 };
+    const t = totalTokenCell([exact, main]);
+    expect(t.approx).toBe(true);
+    expect(t.text).toBe("≈ 1,340.0k");
+    expect(t.title).toContain("Incluye cifras aproximadas");
+    expect(totalTokenCell([exact, { ...exact, reportedTokens: 100_000 }])).toMatchObject({ approx: false, text: "1,000.0k" });
   });
 });

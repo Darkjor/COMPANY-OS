@@ -49,3 +49,29 @@ export function tokenCell(p: Pick<AgentPerformance, "reportedTokens" | "newConte
 }
 
 export const isOverCap = (p: Pick<AgentPerformance, "toolCalls" | "toolCap">) => p.toolCap !== null && p.toolCalls > p.toolCap;
+
+type TokenParts = Pick<AgentPerformance, "reportedTokens" | "newContext" | "outputApprox">;
+
+/**
+ * Session total over every row: exact figures plus the approximation of the agents that have no exact figure
+ * (the main agent). With any approximation the total is marked "≈" and says so; otherwise it is exact.
+ */
+export function totalTokenCell(rows: TokenParts[]): TokenCell {
+  let exact = 0;
+  let approx = 0;
+  let approxAgents = 0;
+  for (const p of rows) {
+    if (p.reportedTokens !== null) exact += p.reportedTokens;
+    else {
+      approx += p.newContext + p.outputApprox;
+      approxAgents++;
+    }
+  }
+  if (approxAgents === 0) return { text: fmtK(exact), approx: false, title: `${fmtInt(exact)} tokens (suma de cifras exactas reportadas por Claude Code)` };
+  const n = exact + approx;
+  return {
+    text: `≈ ${fmtK(n)}`,
+    approx: true,
+    title: `Incluye cifras aproximadas: ${fmtInt(n)} tokens = ${fmtInt(exact)} exactos (subagentes) + ≈ ${fmtInt(approx)} aproximados (${approxAgents === 1 ? "1 agente" : `${approxAgents} agentes`} sin cifra exacta, p. ej. el principal).`,
+  };
+}

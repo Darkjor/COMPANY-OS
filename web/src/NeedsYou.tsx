@@ -69,7 +69,7 @@ function CallCard({ call, now }: { call: Call; now: number }) {
           </span>
           {kind}
           <span className="call-title">
-            {who} · equipo de «{s.team.name}»
+            {who} · equipo de «{s.title ?? s.team.name}»
           </span>
           {when}
         </span>

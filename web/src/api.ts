@@ -64,7 +64,10 @@ export interface Deliverable {
   title: string;
   at: string;
   hat: string | null;
+  /** Real verdict computed by the backend (para-direccion/informe/plan); null for the rest. */
   review: ReviewVerdict | null;
+  /** The review that decides; null when none. `undefined` only on servers that predate the field. */
+  reviewPath?: string | null;
   name: string;
   project: string;
   department: string;

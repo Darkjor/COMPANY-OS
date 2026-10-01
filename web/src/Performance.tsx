@@ -1,6 +1,6 @@
 import { deliverableHref, type AgentPerformance, type AgentView } from "./api.ts";
 import { agentLabel, plural } from "./format.ts";
-import { fmtDuration, fmtInt, fmtK, isOverCap, tokenCell } from "./perf.ts";
+import { fmtDuration, fmtInt, isOverCap, tokenCell, totalTokenCell } from "./perf.ts";
 
 const MAX_LINKS = 3;
 
@@ -53,7 +53,7 @@ export function Performance({
 }) {
   const rows = agents.filter((a) => a.performance);
   if (rows.length === 0 || !total) return null;
-  const totalTokens = tokenCell(total);
+  const totalTokens = totalTokenCell(rows.map((a) => a.performance as AgentPerformance));
   const anyApprox = rows.some((a) => a.performance && tokenCell(a.performance).approx);
   return (
     <section className="perf" aria-label="Desempeño por agente">
@@ -97,13 +97,10 @@ export function Performance({
               <td
                 className={`perf-num ${totalTokens.approx ? "perf-approx" : ""}`}
                 data-label="Tokens"
-                title={
-                  total.reportedTokens !== null
-                    ? `${fmtInt(total.reportedTokens)} tokens: suma de los agentes que reportan cifra exacta; el agente principal no entra`
-                    : totalTokens.title
-                }
+                title={totalTokens.title}
               >
-                {total.reportedTokens !== null ? fmtK(total.reportedTokens) : totalTokens.text}
+                {totalTokens.text}
+                {totalTokens.approx && <span className="sr-only"> (incluye cifras aproximadas)</span>}
               </td>
               <td className="perf-num" data-label="Llamadas">{fmtInt(total.toolCalls)}</td>
               <td className="perf-num" data-label="Duración">{fmtDuration(total.durationMs)}</td>
@@ -114,7 +111,7 @@ export function Performance({
       </div>
       <p className="perf-foot">
         Tokens: cifra exacta cuando Claude Code la reporta; con ≈ es un aproximado (contexto nuevo + salida estimada, sin lecturas de caché)
-        {anyApprox ? " y no entra en el total" : ""}. El tope de llamadas es una instrucción al agente, no un límite impuesto.
+        {anyApprox ? "; el total suma las exactas y las aproximadas, por eso lleva ≈" : ""}. El tope de llamadas es una instrucción al agente, no un límite impuesto.
       </p>
     </section>
   );

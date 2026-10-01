@@ -9,7 +9,7 @@ export interface ReviewLink {
   verdict: ReviewVerdict | null;
 }
 
-async function readFile(path: string): Promise<string | null> {
+export async function readFile(path: string): Promise<string | null> {
   try {
     const res = await fetch(`/api/vault/file?path=${encodeURIComponent(path)}`);
     return res.ok ? ((await res.json()) as { content: string }).content : null;
@@ -47,4 +47,21 @@ export function useReviewLink(docPath: string, content: string | null, type: Del
   if (!key) return { pending: false, path: null, verdict: null };
   if (res?.key !== key) return { pending: true, path: null, verdict: null };
   return { pending: false, path: res.path, verdict: res.verdict };
+}
+
+/** Does this vault file exist? `null` while checking (or with no path). Re-checks when the path changes. */
+export function useFileExists(path: string | null): boolean | null {
+  const [res, setRes] = useState<{ path: string; ok: boolean } | null>(null);
+  useEffect(() => {
+    if (!path) return;
+    let alive = true;
+    void readFile(path).then((md) => {
+      if (alive) setRes({ path, ok: md !== null });
+    });
+    return () => {
+      alive = false;
+    };
+  }, [path]);
+  if (!path) return null;
+  return res?.path === path ? res.ok : null;
 }

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { deliverableHref, markSeen, projectHref, useLive, useNow, type Deliverable, type DeliverableType } from "./api.ts";
+import { deliverableHref, markSeen, projectHref, useLive, useNow, type Deliverable, type DeliverableType, type ReviewVerdict } from "./api.ts";
 import { timeAgo } from "./format.ts";
 import { Markdown, nodeText } from "./Markdown.tsx";
 import { ReviewBadge } from "./ReviewBadge.tsx";
@@ -16,7 +16,7 @@ import {
   typeFromName,
 } from "./readerDoc.ts";
 import { HAT_LABEL } from "./signals.ts";
-import { useReviewLink } from "./useReviewLink.ts";
+import { useFileExists, useReviewLink } from "./useReviewLink.ts";
 import "./reader.css";
 
 const TYPE_LABEL: Record<DeliverableType, string> = {
@@ -30,8 +30,16 @@ const TYPE_LABEL: Record<DeliverableType, string> = {
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
-function Access({ href, label, off }: { href: string | null; label: string; off: string }) {
-  return href ? (
+/** `exists` false = the file is gone (disabled with `off`); null = still checking (disabled, keeps its label). */
+function Access({ href, label, off, exists = true }: { href: string | null; label: string; off: string; exists?: boolean | null }) {
+  if (href && exists === null) {
+    return (
+      <span className="btn btn-off" role="link" aria-disabled="true">
+        {label}
+      </span>
+    );
+  }
+  return href && exists ? (
     <a className="btn" href={href}>
       {label}
     </a>
@@ -84,17 +92,31 @@ export function Reader({ path, fromReady }: { path: string; fromReady: boolean }
     lastContent.current = content;
   }, [content]);
 
-  const review = useReviewLink(path, content, type, all ? all.map((d) => d.path) : list.error ? [] : null);
+  // The backend computes the real verdict and review path; the client-side search is only a fallback for old servers.
+  const backend = meta !== null && meta.reviewPath !== undefined && (type === "para-direccion" || type === "informe" || type === "plan");
+  const review = useReviewLink(path, content, backend ? "otro" : type, all ? all.map((d) => d.path) : list.error ? [] : null);
   const parsed = useMemo(() => (content === null ? null : parseDoc(content.slice(0, MAX_CHARS), type)), [content, type]);
   const truncated = (content?.length ?? 0) > MAX_CHARS;
 
   const siblings = (all ?? []).filter((d) => dirname(d.path) === folder);
   const hasExecutive = type === "para-direccion" || siblings.some((d) => d.type === "para-direccion");
-  const unreviewed = (type === "informe" || type === "plan") && !hasExecutive && !review.path && !review.pending;
-  const verdict = unreviewed ? "sin-revisar" : (review.path ? review.verdict : null) ?? meta?.review ?? parsed?.verdict ?? null;
+  const reviewKnown = backend ? !!meta?.reviewPath : !!review.path;
+  const unreviewed = (type === "informe" || type === "plan") && !hasExecutive && !reviewKnown && !review.pending;
+  const verdict: ReviewVerdict | null = backend
+    ? meta?.review ?? "sin-revisar" // the backend wins over whatever the document says
+    : unreviewed
+      ? "sin-revisar"
+      : (review.path ? review.verdict : null) ?? meta?.review ?? parsed?.verdict ?? null;
 
   const fullPath = parsed?.fullPath ?? siblings.find((d) => d.type === "informe" || d.type === "plan")?.path ?? null;
-  const reviewPath = unreviewed ? null : review.path ?? parsed?.reviewPath ?? siblings.find((d) => d.type === "revision")?.path ?? null;
+  const reviewPath = backend
+    ? meta?.reviewPath ?? null
+    : unreviewed
+      ? null
+      : review.path ?? parsed?.reviewPath ?? siblings.find((d) => d.type === "revision")?.path ?? null;
+  const fullLink = fullPath && fullPath !== path ? fullPath : null;
+  const fullExists = useFileExists(fullLink);
+  const reviewExists = useFileExists(reviewPath);
   const sessionId = meta?.sessionId ?? null;
   const project = meta?.project ?? parts.project ?? parsed?.project ?? null;
   const dept = meta?.department ?? parts.department;
@@ -165,8 +187,18 @@ export function Reader({ path, fromReady }: { path: string; fromReady: boolean }
           {date && <div><dt className="sr-only">Fecha</dt><dd>{date}</dd></div>}
         </dl>
         <nav className="reader-links" aria-label="Documentos relacionados">
-          <Access href={fullPath && fullPath !== path ? deliverableHref(fullPath) : null} label="Informe completo" off={type === "informe" ? "Estás en el informe" : "Sin informe completo"} />
-          <Access href={reviewPath ? deliverableHref(reviewPath) : null} label="Revisión de calidad" off="Sin revisión" />
+          <Access
+            href={fullLink ? deliverableHref(fullLink) : null}
+            exists={fullExists}
+            label="Informe completo"
+            off={fullLink ? "Informe no encontrado en el vault" : type === "informe" ? "Estás en el informe" : "Sin informe completo"}
+          />
+          <Access
+            href={reviewPath ? deliverableHref(reviewPath) : null}
+            exists={reviewExists}
+            label="Revisión de calidad"
+            off={reviewPath ? "Revisión no encontrada en el vault" : "Sin revisión"}
+          />
           <Access href={sessionId ? `#/s/${sessionId}` : null} label="Ver sesión del agente" off="Sesión no disponible" />
         </nav>
         {showToc && (

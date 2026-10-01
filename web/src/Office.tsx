@@ -147,7 +147,7 @@ function MemberSeat({ info, m }: { info: TeamInfo; m: TeamMember }) {
       <b className="tip-head">{state}</b>
       <span className="tip-title">{who}</span>
       <span className="tip-meta">
-        {signal ? signalText(signal) : STATUS_LABEL[m.status].toLowerCase()} · equipo de «{info.team.name}»
+        {signal ? signalText(signal) : STATUS_LABEL[m.status].toLowerCase()} · equipo de «{info.leader.title ?? info.team.name}»
       </span>
       {m.current && m.status === "working" && <span className="tip-meta">{m.current}</span>}
       <span className="tip-hint">Clic: abrir la sesión del equipo</span>
@@ -161,7 +161,7 @@ function MemberSeat({ info, m }: { info: TeamInfo; m: TeamMember }) {
         data-team={info.letter}
         href={sessionHref(info.leader.id, m.name)}
         {...handlers}
-        title={`${who} · ${state.toLowerCase()} · equipo de «${info.team.name}»`}
+        title={`${who} · ${state.toLowerCase()} · equipo de «${info.leader.title ?? info.team.name}»`}
       >
         <TeamTag tag={{ letter: info.letter, leader: false, teamName: info.team.name }} />
         <span className="seat-figure">

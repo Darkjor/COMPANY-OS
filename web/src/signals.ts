@@ -26,6 +26,10 @@ export function isNewDeliverable(d: Deliverable, locallySeen: (path: string) => 
 /** What the session is signalling right now, or null when it is just working/idle. */
 export function signalOf(s: SessionView, locallySeen: (path: string) => boolean = () => false): Signal | null {
   if (s.status === "error") return "error";
+  // A finished (headless) session keeps its "informe listo" until the human sees it, whatever status it ended in.
+  if (s.waitingKind === "delivered" && s.status !== "working" && s.status !== "subagents") {
+    return s.deliverable && isNewDeliverable(s.deliverable, locallySeen) ? "delivered" : s.status === "waiting" ? "finished" : null;
+  }
   if (s.status !== "waiting") return null;
   switch (s.waitingKind) {
     case "permission":
