@@ -164,3 +164,30 @@ export function classifyHref(href: string | undefined): LinkKind {
   if (/^[a-z][a-z0-9+.-]*:/i.test(h) || h.startsWith("//") || h.startsWith("#")) return "none";
   return /\.(md|txt|json|csv|ya?ml)(#.*)?$/i.test(h) ? "internal" : "none";
 }
+
+/** First `Proyectos/…/revision*.md` quoted in the first lines of a report's header (backslashes allowed). */
+export function citedReviewPath(content: string): string | null {
+  const head = content.split(/\r?\n/).slice(0, 15).join("\n").replace(/\\/g, "/");
+  return /Proyectos\/[^\s`'"()<>]+\/revision[^\s`'"()<>/]*\.md/i.exec(head)?.[0] ?? null;
+}
+
+/** Where a report's review lives: (a) a `revision*.md` in the same folder, else (b) the one the report cites. */
+export function reviewCandidate(docPath: string, content: string, deliverablePaths: string[]): string | null {
+  const folder = dirname(docPath);
+  const sibs = deliverablePaths.filter((p) => dirname(p) === folder && /^revision[^/]*\.md$/i.test(basename(p)));
+  if (sibs.length) return sibs.find((p) => /seguimiento/i.test(p)) ?? sibs[0];
+  return citedReviewPath(content);
+}
+
+/** The newest review of a delivery is a `revision-seguimiento.md` next to the original one. */
+export const followUpOf = (reviewPath: string) => `${dirname(reviewPath)}/revision-seguimiento.md`;
+
+/** Verdict from the `## N. Veredicto[ final]: <TEXTO>` heading of a review. */
+export function reviewVerdictFromDoc(md: string): ReviewVerdict | null {
+  for (const { line, fenced } of eachLine(md)) {
+    if (fenced) continue;
+    const m = /^##\s+(?:\d+\.\s*)?veredicto(?:\s+final)?\s*:\s*(.+?)\s*#*\s*$/i.exec(line);
+    if (m) return parseVerdict(m[1]);
+  }
+  return null;
+}

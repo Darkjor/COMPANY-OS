@@ -16,6 +16,7 @@ import {
   typeFromName,
 } from "./readerDoc.ts";
 import { HAT_LABEL } from "./signals.ts";
+import { useReviewLink } from "./useReviewLink.ts";
 import "./reader.css";
 
 const TYPE_LABEL: Record<DeliverableType, string> = {
@@ -83,16 +84,17 @@ export function Reader({ path, fromReady }: { path: string; fromReady: boolean }
     lastContent.current = content;
   }, [content]);
 
+  const review = useReviewLink(path, content, type, all ? all.map((d) => d.path) : list.error ? [] : null);
   const parsed = useMemo(() => (content === null ? null : parseDoc(content.slice(0, MAX_CHARS), type)), [content, type]);
   const truncated = (content?.length ?? 0) > MAX_CHARS;
 
   const siblings = (all ?? []).filter((d) => dirname(d.path) === folder);
   const hasExecutive = type === "para-direccion" || siblings.some((d) => d.type === "para-direccion");
-  const unreviewed = (type === "informe" || type === "plan") && !hasExecutive;
-  const verdict = unreviewed ? "sin-revisar" : meta?.review ?? parsed?.verdict ?? null;
+  const unreviewed = (type === "informe" || type === "plan") && !hasExecutive && !review.path && !review.pending;
+  const verdict = unreviewed ? "sin-revisar" : (review.path ? review.verdict : null) ?? meta?.review ?? parsed?.verdict ?? null;
 
   const fullPath = parsed?.fullPath ?? siblings.find((d) => d.type === "informe" || d.type === "plan")?.path ?? null;
-  const reviewPath = unreviewed ? null : parsed?.reviewPath ?? siblings.find((d) => d.type === "revision")?.path ?? null;
+  const reviewPath = unreviewed ? null : review.path ?? parsed?.reviewPath ?? siblings.find((d) => d.type === "revision")?.path ?? null;
   const sessionId = meta?.sessionId ?? null;
   const project = meta?.project ?? parts.project ?? parsed?.project ?? null;
   const dept = meta?.department ?? parts.department;
