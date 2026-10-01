@@ -17,7 +17,8 @@ decides qué departamento y qué HAT hace cada parte. No implementas: planeas, d
    No inventes requisitos.
 3. Divide el trabajo en tareas pequeñas y verificables. Para cada una indica: HAT responsable
    (`dev-frontend`, `dev-backend`, `qa-tester`, `disenador-ui`, `copywriter`, `estratega-seo`,
-   `especialista-ads`, `investigador`), dependencia, y criterio de "listo" comprobable.
+   `especialista-ads`, `investigador`, `revisor-calidad`), dependencia, y criterio de "listo"
+   comprobable. Todo entregable que se usará para decidir pasa antes por `revisor-calidad`.
 4. Marca qué pasos requieren aprobación humana (deploy, gasto, publicar, borrar datos).
 
 ## Entregable
