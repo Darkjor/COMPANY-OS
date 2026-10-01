@@ -61,6 +61,8 @@ export interface SessionView {
   tokens: Tokens;
   activeAgents: number;
   department: string;
+  /** Launched headless (claude -p / SDK): a finished turn means "done", nobody is waiting for you. */
+  automated: boolean;
   crew: CrewMember[];
   /** Live subagents without a HAT (drawn as drones next to the main agent). */
   drones: number;
@@ -188,6 +190,7 @@ interface SessionRow {
   model: string | null;
   started_at: string | null;
   last_event_at: string | null;
+  automated: number;
 }
 
 function toSessionView(row: SessionRow, agents: AgentView[], ctx: Ctx): SessionView {
@@ -195,6 +198,10 @@ function toSessionView(row: SessionRow, agents: AgentView[], ctx: Ctx): SessionV
   const subs = agents.filter((a) => a.kind === "subagent");
   const activeSubs = subs.filter((a) => a.status === "working").length;
   let status: Status = main?.status ?? "idle";
+  if (row.automated && status === "waiting") {
+    status = "done";
+    if (main) main.status = "done";
+  }
   if (activeSubs > 0 && status !== "error") status = "subagents";
   return {
     id: row.id,
@@ -209,6 +216,7 @@ function toSessionView(row: SessionRow, agents: AgentView[], ctx: Ctx): SessionV
     tokens: agents.reduce((t, a) => add(t, a.tokens), ZERO),
     activeAgents: agents.filter((a) => a.status === "working").length,
     department: classifySession(row.cwd, row.title, ctx.vaultDir, ctx.departments),
+    automated: row.automated === 1,
     crew: subs
       .filter((a) => a.hatDepartment && LIVE_STATUSES.has(a.status))
       .map((a) => ({

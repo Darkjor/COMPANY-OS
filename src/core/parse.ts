@@ -33,6 +33,11 @@ export interface ParsedLine {
   ts: string | null;
   title: string | null;
   model: string | null;
+  /**
+   * Who started the turn: "human" for prompts typed in VS Code/CLI, "sdk" for headless runs
+   * (claude -p). Note: promptSource is "sdk" for both, so only turnOrigin tells them apart.
+   */
+  turnOrigin: string | null;
   events: ParsedEvent[];
   usage: ParsedUsage | null;
 }
@@ -185,6 +190,7 @@ export function parseLine(line: string): ParsedLine | null {
     ts,
     title: raw.type === "ai-title" ? str(raw.aiTitle) : null,
     model: null,
+    turnOrigin: raw.type === "user" ? str(raw.turnOrigin) : null,
     events: [],
     usage: null,
   };

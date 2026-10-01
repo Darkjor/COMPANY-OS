@@ -11,7 +11,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   title         TEXT,
   model         TEXT,
   started_at    TEXT,
-  last_event_at TEXT
+  last_event_at TEXT,
+  automated     INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS agents (
@@ -70,12 +71,28 @@ CREATE TABLE IF NOT EXISTS ingest_state (
 
 export type DB = DatabaseSync;
 
+const SCHEMA_VERSION = 3;
+
 export function openDb(path: string): DB {
   if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
   const db = new DatabaseSync(path);
   db.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;");
   db.exec(SCHEMA);
+  migrate(db);
   return db;
+}
+
+/** The DB is only an index: a migration may simply force a full re-read of the transcripts. */
+function migrate(db: DB): void {
+  const { user_version: v } = db.prepare("PRAGMA user_version").get() as { user_version: number };
+  if (v >= SCHEMA_VERSION) return;
+  const cols = db.prepare("PRAGMA table_info(sessions)").all() as { name: string }[];
+  if (!cols.some((c) => c.name === "automated")) {
+    db.exec("ALTER TABLE sessions ADD COLUMN automated INTEGER NOT NULL DEFAULT 0");
+  }
+  db.exec("UPDATE sessions SET automated = 0"); // v2 misdetected interactive sessions; recompute
+  db.exec("DELETE FROM ingest_state"); // re-ingest everything so old sessions get the new column right
+  db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
 }
 
 export function tx<T>(db: DB, fn: () => T): T {

@@ -39,6 +39,26 @@ function fixture(): string {
   return root;
 }
 
+describe("automated sessions", () => {
+  it("a finished headless run is 'done', never 'waiting for you'", () => {
+    const root = mkdtempSync(join(tmpdir(), "cos-auto-"));
+    const proj = join(root, "c--Projects-demo");
+    mkdirSync(proj, { recursive: true });
+    const base = { sessionId: "auto-1", cwd: "C:\\Projects\\demo" };
+    writeFileSync(
+      join(proj, "auto-1.jsonl"),
+      line({ ...base, type: "user", uuid: "u1", timestamp: "2026-09-30T12:00:00Z", promptSource: "sdk", turnOrigin: "sdk", message: { content: "Investiga X" } }) +
+        line({ ...base, type: "assistant", uuid: "a1", timestamp: "2026-09-30T12:00:10Z", message: { id: "m1", model: "claude-haiku-4-5", content: [{ type: "text", text: "Listo, informe en el vault." }], usage: { input_tokens: 1, output_tokens: 1 } } }),
+    );
+    const db = openDb(":memory:");
+    ingestAll(db, root);
+    const ctx = { vaultDir: "Z:/v", vault: [], departments: loadDepartments("Z:/x"), hats: new Map<string, string>() };
+    const s = overview(db, ctx, 30, NOW).projects[0].sessions[0];
+    expect(s.automated).toBe(true);
+    expect(s.status).toBe("done");
+  });
+});
+
 describe("office seating", () => {
   it("seats a HAT subagent at its HAT's department, not its parent session's", () => {
     const db = openDb(":memory:");
@@ -61,5 +81,25 @@ describe("office seating", () => {
     const marketing = ov.projects[0].departments.find((d) => d.slug === "marketing")!;
     expect(marketing.status).toBe("working");
     expect(marketing.activeAgents).toBe(1);
+  });
+});
+
+describe("interactive sessions", () => {
+  it("VS Code prompts (promptSource sdk, turnOrigin human) are not automated", () => {
+    const root = mkdtempSync(join(tmpdir(), "cos-human-"));
+    const proj = join(root, "c--Projects-demo");
+    mkdirSync(proj, { recursive: true });
+    const base = { sessionId: "h-1", cwd: "C:\\Projects\\demo" };
+    writeFileSync(
+      join(proj, "h-1.jsonl"),
+      line({ ...base, type: "user", uuid: "u1", timestamp: "2026-09-30T12:00:00Z", promptSource: "sdk", turnOrigin: "human", message: { content: "Hola" } }) +
+        line({ ...base, type: "assistant", uuid: "a1", timestamp: "2026-09-30T12:00:10Z", message: { id: "m1", model: "claude-opus-5-5", content: [{ type: "text", text: "¿Qué hacemos?" }], usage: { input_tokens: 1, output_tokens: 1 } } }),
+    );
+    const db = openDb(":memory:");
+    ingestAll(db, root);
+    const ctx = { vaultDir: "Z:/v", vault: [], departments: loadDepartments("Z:/x"), hats: new Map<string, string>() };
+    const s = overview(db, ctx, 30, NOW).projects[0].sessions[0];
+    expect(s.automated).toBe(false);
+    expect(s.status).toBe("waiting");
   });
 });
