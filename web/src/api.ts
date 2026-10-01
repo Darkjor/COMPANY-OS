@@ -22,6 +22,8 @@ export interface SessionView {
   tokens: Tokens;
   activeAgents: number;
   department: string;
+  automated: boolean;
+  hat: { name: string; department: string } | null;
   crew: CrewMember[];
   drones: number;
 }

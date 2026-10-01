@@ -125,7 +125,9 @@ export function ingestFile(db: DB, ref: TranscriptRef): string | null {
   let first: string | null = null;
   let last: string | null = null;
   let automated = 0;
+  let agentSetting: string | null = null;
   for (const p of parsed) {
+    if (ref.kind === "main") agentSetting = p.agentSetting ?? agentSetting;
     if (ref.kind === "main" && p.turnOrigin === "sdk") automated = 1;
     cwd = p.cwd ?? cwd;
     branch = p.gitBranch ?? branch;
@@ -137,10 +139,11 @@ export function ingestFile(db: DB, ref: TranscriptRef): string | null {
 
   tx(db, () => {
     db.prepare(
-      `INSERT INTO sessions(id, project_dir, cwd, git_branch, title, model, started_at, last_event_at, automated)
-       VALUES(?,?,?,?,?,?,?,?,?)
+      `INSERT INTO sessions(id, project_dir, cwd, git_branch, title, model, started_at, last_event_at, automated, agent_setting)
+       VALUES(?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT(id) DO UPDATE SET
          automated = MAX(sessions.automated, excluded.automated),
+         agent_setting = COALESCE(excluded.agent_setting, sessions.agent_setting),
          cwd = COALESCE(sessions.cwd, excluded.cwd),
          git_branch = COALESCE(excluded.git_branch, sessions.git_branch),
          title = COALESCE(excluded.title, sessions.title),
@@ -149,7 +152,7 @@ export function ingestFile(db: DB, ref: TranscriptRef): string | null {
                            THEN excluded.started_at ELSE sessions.started_at END,
          last_event_at = CASE WHEN sessions.last_event_at IS NULL OR excluded.last_event_at > sessions.last_event_at
                               THEN excluded.last_event_at ELSE sessions.last_event_at END`,
-    ).run(ref.sessionId, ref.projectDir, cwd, branch, title, ref.kind === "main" ? model : null, first, last, automated, ref.kind);
+    ).run(ref.sessionId, ref.projectDir, cwd, branch, title, ref.kind === "main" ? model : null, first, last, automated, agentSetting, ref.kind);
 
     const meta = ref.kind === "subagent" ? readMeta(ref.file) : {};
     db.prepare(

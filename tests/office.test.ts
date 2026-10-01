@@ -103,3 +103,24 @@ describe("interactive sessions", () => {
     expect(s.status).toBe("waiting");
   });
 });
+
+describe("sessions running as a HAT", () => {
+  it("`claude --agent copywriter` sits in Marketing wearing its hat", () => {
+    const root = mkdtempSync(join(tmpdir(), "cos-agent-"));
+    const proj = join(root, "c--Projects-demo");
+    mkdirSync(proj, { recursive: true });
+    const base = { sessionId: "hat-1", cwd: "C:\Projects\demo" };
+    writeFileSync(
+      join(proj, "hat-1.jsonl"),
+      line({ type: "agent-setting", agentSetting: "copywriter", sessionId: "hat-1" }) +
+        line({ ...base, type: "user", uuid: "u1", timestamp: "2026-09-30T12:00:00Z", turnOrigin: "sdk", message: { content: "Copys del carrusel" } }) +
+        line({ ...base, type: "assistant", uuid: "a1", timestamp: "2026-09-30T12:00:20Z", message: { id: "m1", model: "claude-sonnet-5-5", content: [{ type: "tool_use", id: "t1", name: "Write", input: { file_path: "copys.md" } }], usage: { input_tokens: 1, output_tokens: 1 } } }),
+    );
+    const db = openDb(":memory:");
+    ingestAll(db, root);
+    const ctx = { vaultDir: "Z:/v", vault: [], departments: loadDepartments("Z:/x"), hats: new Map([["copywriter", "marketing"]]) };
+    const s = overview(db, ctx, 30, NOW).projects[0].sessions[0];
+    expect(s.hat).toEqual({ name: "copywriter", department: "marketing" });
+    expect(s.department).toBe("marketing");
+  });
+});

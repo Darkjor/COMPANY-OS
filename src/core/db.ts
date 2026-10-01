@@ -12,7 +12,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   model         TEXT,
   started_at    TEXT,
   last_event_at TEXT,
-  automated     INTEGER NOT NULL DEFAULT 0
+  automated     INTEGER NOT NULL DEFAULT 0,
+  agent_setting TEXT
 );
 
 CREATE TABLE IF NOT EXISTS agents (
@@ -71,7 +72,7 @@ CREATE TABLE IF NOT EXISTS ingest_state (
 
 export type DB = DatabaseSync;
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 export function openDb(path: string): DB {
   if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
@@ -89,6 +90,9 @@ function migrate(db: DB): void {
   const cols = db.prepare("PRAGMA table_info(sessions)").all() as { name: string }[];
   if (!cols.some((c) => c.name === "automated")) {
     db.exec("ALTER TABLE sessions ADD COLUMN automated INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!cols.some((c) => c.name === "agent_setting")) {
+    db.exec("ALTER TABLE sessions ADD COLUMN agent_setting TEXT");
   }
   db.exec("UPDATE sessions SET automated = 0"); // v2 misdetected interactive sessions; recompute
   db.exec("DELETE FROM ingest_state"); // re-ingest everything so old sessions get the new column right

@@ -38,6 +38,8 @@ export interface ParsedLine {
    * (claude -p). Note: promptSource is "sdk" for both, so only turnOrigin tells them apart.
    */
   turnOrigin: string | null;
+  /** HAT the whole session runs as (`claude --agent <hat>`), from `agent-setting` lines. */
+  agentSetting: string | null;
   events: ParsedEvent[];
   usage: ParsedUsage | null;
 }
@@ -191,6 +193,7 @@ export function parseLine(line: string): ParsedLine | null {
     title: raw.type === "ai-title" ? str(raw.aiTitle) : null,
     model: null,
     turnOrigin: raw.type === "user" ? str(raw.turnOrigin) : null,
+    agentSetting: raw.type === "agent-setting" ? str(raw.agentSetting) : null,
     events: [],
     usage: null,
   };

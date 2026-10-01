@@ -25,7 +25,13 @@ function Seat({ s, now }: { s: SessionView; now: number }) {
       title={`${s.title ?? "Sesión"} · ${STATUS_LABEL[s.status]}${s.current ? ` · ${s.current}` : ""}`}
     >
       <span className="seat-figure">
-        <Worker seed={s.id} model={s.model} status={status} label={`${s.title ?? "Agente"}: ${STATUS_LABEL[s.status]}`} />
+        <Worker
+          seed={s.id}
+          model={s.model}
+          status={status}
+          hat={s.hat?.department}
+          label={`${s.hat?.name ?? s.title ?? "Agente"}: ${STATUS_LABEL[s.status]}`}
+        />
         {drones > 0 && (
           <span className="drones">
             {Array.from({ length: drones }, (_, i) => (
@@ -35,7 +41,9 @@ function Seat({ s, now }: { s: SessionView; now: number }) {
         )}
       </span>
       <Desk lit={status === "working"} />
-      <span className="seat-caption">{caption(s, now)}</span>
+      <span className="seat-caption">
+        {s.hat && <span className="seat-hat">{s.hat.name}</span>} {caption(s, now)}
+      </span>
     </a>
   );
 }
