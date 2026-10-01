@@ -215,9 +215,9 @@ describe("Stop → 'entregó' when the turn wrote a deliverable", () => {
 
 describe("POST /hooks/:event", () => {
   const mkApp = (db: DB, rawHookLog?: { file: string; maxBytes: number }) =>
-    createApp({ db, vaultDir: vault, ctx: () => ctx, hookToken: "tok", subscribe: () => () => {}, rawHookLog });
+    createApp({ db, vaultDir: vault, ctx: () => ctx, hookToken: "tok", port: 4747, subscribe: () => () => {}, rawHookLog });
   const post = (app: ReturnType<typeof mkApp>, event: string, body: string, token = "tok") =>
-    app.request(`/hooks/${event}?t=${token}`, { method: "POST", body, headers: { "content-type": "application/json" } });
+    app.request(`http://127.0.0.1:4747/hooks/${event}?t=${token}`, { method: "POST", body, headers: { "content-type": "application/json" } });
 
   it("403 without the token; 200 {} on garbage; stores only allow-listed fields", async () => {
     const db = openDb(":memory:");

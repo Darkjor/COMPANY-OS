@@ -1,12 +1,13 @@
-import { randomBytes } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { existsSync } from "node:fs";
+import { dirname, join, relative } from "node:path";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { CLAUDE_PROJECTS_DIR, DB_PATH, PORT, TEAMS_DIR, VAULT_DIR } from "../core/config.ts";
 import { openDb } from "../core/db.ts";
+import { DATA_DIR, loadOrCreateHookToken } from "../core/hook-token.ts";
 import { ingestAll } from "../core/ingest.ts";
 import { log } from "../core/log.ts";
+import { startMaintenance } from "../core/maintenance.ts";
 import { loadDepartments } from "../core/departments.ts";
 import { hatDepartments } from "../core/hats.ts";
 import { type Ctx } from "../core/queries.ts";
@@ -38,16 +39,16 @@ function ctx(): Ctx {
   return ctxCache.ctx;
 }
 
+// Respaldo diario de la DB (conserva 7) y poda de hook_events a 30 dias; ver docs/ARCHITECTURE.md 3.3.
+startMaintenance(db, join(dirname(DB_PATH), "backups"));
+
 const listeners = new Set<Listener>();
 const notify: Listener = (ids) => {
   for (const l of listeners) l(ids);
 };
 startWatcher(db, CLAUDE_PROJECTS_DIR, notify, 3000, { vaultDir: VAULT_DIR });
 
-const DATA_DIR = join(import.meta.dirname, "..", "..", "data");
-const HOOK_TOKEN_FILE = join(DATA_DIR, "hook-token.txt");
-if (!existsSync(HOOK_TOKEN_FILE)) writeFileSync(HOOK_TOKEN_FILE, randomBytes(16).toString("hex"));
-const hookToken = readFileSync(HOOK_TOKEN_FILE, "utf8").trim();
+const hookToken = loadOrCreateHookToken();
 
 // Raw payloads (prompts, commands, replies!) are only logged on purpose, and capped at 5 MB.
 const debugRaw = process.env.COMPANY_OS_HOOK_DEBUG === "1";
@@ -58,6 +59,7 @@ const app = createApp({
   vaultDir: VAULT_DIR,
   ctx,
   hookToken,
+  port: PORT,
   notify,
   subscribe: (l) => {
     listeners.add(l);

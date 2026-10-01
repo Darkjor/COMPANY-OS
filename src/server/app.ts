@@ -8,6 +8,7 @@ import { recordHook, sanitizeHook } from "../core/hooks.ts";
 import { log } from "../core/log.ts";
 import { overview, projectDetail, sessionDetail, type Ctx } from "../core/queries.ts";
 import { readVaultText } from "../core/vault.ts";
+import { hostGuard } from "./host-guard.ts";
 
 export type Listener = (sessionIds: string[]) => void;
 
@@ -17,6 +18,8 @@ export interface AppDeps {
   /** Vault/department/HAT context, cached by the caller. */
   ctx: () => Ctx;
   hookToken: string;
+  /** Puerto en el que escucha el servidor: el header Host de /api y /hooks debe ser 127.0.0.1:<port> o localhost:<port>. */
+  port: number;
   /** Subscribe to "sessions changed" notifications (SSE). Returns the unsubscribe function. */
   subscribe: (l: Listener) => () => void;
   /** Notify listeners that these sessions changed (a hook arrived). */
@@ -61,6 +64,10 @@ const param = (v: string | undefined, max = 200): string | undefined => (v && v.
 export function createApp(deps: AppDeps): Hono {
   const { db, vaultDir } = deps;
   const app = new Hono();
+
+  // Antes que cualquier ruta: rechaza Host ajeno (DNS rebinding). El resto (web estatica) no expone datos.
+  app.use("/api/*", hostGuard(deps.port));
+  app.use("/hooks/*", hostGuard(deps.port));
 
   app.get("/api/overview", (c) => {
     const days = Number(c.req.query("days") ?? 30);

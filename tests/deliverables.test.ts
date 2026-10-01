@@ -118,8 +118,8 @@ describe("GET /api/deliverables", () => {
   const db = openDb(":memory:");
   recordDeliverable(db, classifyDeliverable(vault, join(dir, "informe.md"))!, "s-1", "2026-10-01T10:00:00Z", "hook");
   recordDeliverable(db, classifyDeliverable(vault, join(dir, "plan.md"))!, "s-2", "2026-10-01T11:00:00Z", "hook");
-  const app = createApp({ db, vaultDir: vault, ctx: () => ctx, hookToken: "t", subscribe: () => () => {} });
-  const get = async (q: string) => ((await (await app.request(`/api/deliverables${q}`)).json()) as { deliverables: { path: string; sessionId: string }[] }).deliverables;
+  const app = createApp({ db, vaultDir: vault, ctx: () => ctx, hookToken: "t", port: 4747, subscribe: () => () => {} });
+  const get = async (q: string) => ((await (await app.request(`http://127.0.0.1:4747/api/deliverables${q}`)).json()) as { deliverables: { path: string; sessionId: string }[] }).deliverables;
 
   it("lists newest first and filters by session and by project (slug or key)", async () => {
     expect((await get("")).map((d) => d.sessionId)).toEqual(["s-2", "s-1"]);
@@ -143,8 +143,8 @@ describe("GET /api/deliverables", () => {
 });
 
 describe("GET /api/vault/file stays inside the vault", () => {
-  const app = createApp({ db: openDb(":memory:"), vaultDir: vault, ctx: () => ctx, hookToken: "t", subscribe: () => () => {} });
-  const get = (path: string) => app.request(`/api/vault/file?path=${encodeURIComponent(path)}`);
+  const app = createApp({ db: openDb(":memory:"), vaultDir: vault, ctx: () => ctx, hookToken: "t", port: 4747, subscribe: () => () => {} });
+  const get = (path: string) => app.request(`http://127.0.0.1:4747/api/vault/file?path=${encodeURIComponent(path)}`);
 
   it("reads a normal vault file", async () => {
     const r = await get("Proyectos/demo/desarrollo/2026-10-01-algo/informe.md");

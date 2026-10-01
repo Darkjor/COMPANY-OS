@@ -137,9 +137,9 @@ describe("shared 'seen' mark", () => {
     const db = openDb(":memory:");
     recordDeliverable(db, classifyDeliverable(vault, file)!, "s-1", "2026-10-01T10:00:00Z", "hook");
     const notified: string[][] = [];
-    const app = createApp({ db, vaultDir: vault, ctx: () => ctx, hookToken: "t", subscribe: () => () => {}, notify: (ids) => notified.push(ids) });
+    const app = createApp({ db, vaultDir: vault, ctx: () => ctx, hookToken: "t", port: 4747, subscribe: () => () => {}, notify: (ids) => notified.push(ids) });
     const post = (body: unknown, type = "application/json") =>
-      app.request("/api/deliverables/seen", { method: "POST", headers: { "content-type": type }, body: typeof body === "string" ? body : JSON.stringify(body) });
+      app.request("http://127.0.0.1:4747/api/deliverables/seen", { method: "POST", headers: { "content-type": type }, body: typeof body === "string" ? body : JSON.stringify(body) });
     return { db, post, notified };
   };
 
