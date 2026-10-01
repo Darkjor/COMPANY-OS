@@ -16,6 +16,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "hats": "node src/core/cli-hats.ts",
+    "hooks": "node src/core/cli-hooks.ts",
     "spawn": "node src/core/cli-spawn.ts"
   },
   "dependencies": {
