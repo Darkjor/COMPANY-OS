@@ -1,10 +1,12 @@
 import { useState } from "react";
-import { useLive, useNow, type DepartmentDetail, type ProjectDetail, type SessionView, type VaultEntry } from "./api.ts";
+import { useLive, useNow, type DepartmentDetail, type Deliverable, type ProjectDetail, type SessionView, type VaultEntry } from "./api.ts";
+import { DeliverableList } from "./DeliverableList.tsx";
 import { STATUS_LABEL, fmtNum, freshTokens, plural, timeAgo } from "./format.ts";
 import { Room, deptCode } from "./Office.tsx";
 
 export function Project({ projectKey }: { projectKey: string }) {
   const { data, error } = useLive<ProjectDetail>(`/api/projects/${encodeURIComponent(projectKey)}`);
+  const dels = useLive<{ deliverables: Deliverable[] }>(`/api/deliverables?project=${encodeURIComponent(projectKey)}&limit=500`);
   const now = useNow();
 
   if (error && !data) return <div className="empty">No se pudo abrir la sala: {error}</div>;
@@ -33,7 +35,9 @@ export function Project({ projectKey }: { projectKey: string }) {
         </p>
       )}
 
-      <h2 className="section-label">Departamentos</h2>
+      {p.mapped && <DeliverableList items={dels.data?.deliverables ?? (dels.error ? [] : null)} now={now} departments={departments} />}
+
+      <h2 className="section-label dept-label">Departamentos</h2>
       <div className="registry">
         {departments.map((d) => (
           <DeptRow key={d.slug} d={d} now={now} mapped={p.mapped} />
@@ -65,7 +69,7 @@ function DeptRow({ d, now, mapped }: { d: DepartmentDetail; now: number; mapped:
       </div>
       {mapped && (
         <div className="reg-col">
-          <h3 className="col-label">Entregables en el vault</h3>
+          <h3 className="col-label">Archivos en el vault</h3>
           {d.files.length === 0 ? (
             <p className="muted small">Carpeta vacía.</p>
           ) : (
