@@ -1,4 +1,5 @@
-import { existsSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
@@ -57,6 +58,40 @@ app.get("/api/projects/:key", (c) => {
 app.get("/api/sessions/:id", (c) => {
   const detail = sessionDetail(db, ctx(), c.req.param("id"));
   return detail ? c.json(detail) : c.json({ error: "not found" }, 404);
+});
+
+/**
+ * Claude Code HTTP hooks → Company OS (phase: experiment). Contract from the hooks docs: always
+ * answer 200 `{}` fast; a failure here must never block Claude. Token in the query string keeps
+ * other local processes from injecting fake events.
+ */
+const HOOK_TOKEN_FILE = join(import.meta.dirname, "..", "..", "data", "hook-token.txt");
+const HOOK_EVENTS_FILE = join(import.meta.dirname, "..", "..", "data", "hooks-events.ndjson");
+if (!existsSync(HOOK_TOKEN_FILE)) writeFileSync(HOOK_TOKEN_FILE, randomBytes(16).toString("hex"));
+const hookToken = readFileSync(HOOK_TOKEN_FILE, "utf8").trim();
+
+const clipDeep = (v: unknown): unknown => {
+  if (typeof v === "string") return v.length > 2000 ? v.slice(0, 2000) + "…[recortado]" : v;
+  if (Array.isArray(v)) return v.slice(0, 50).map(clipDeep);
+  if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, clipDeep(x)]));
+  return v;
+};
+
+app.post("/hooks/:event", async (c) => {
+  if (c.req.query("t") !== hookToken) return c.json({}, 403);
+  const receivedAt = new Date().toISOString();
+  let payload: unknown = null;
+  try {
+    payload = await c.req.json();
+  } catch (err) {
+    log.warn(`hook ${c.req.param("event")} sin JSON válido: ${String(err)}`);
+  }
+  try {
+    appendFileSync(HOOK_EVENTS_FILE, JSON.stringify({ receivedAt, event: c.req.param("event"), payload: clipDeep(payload) }) + "\n");
+  } catch (err) {
+    log.warn(`no se pudo guardar el evento de hook: ${String(err)}`);
+  }
+  return c.json({});
 });
 
 app.get("/api/vault/file", (c) => {
