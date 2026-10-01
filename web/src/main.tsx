@@ -2,6 +2,7 @@ import { Component, StrictMode, useEffect, useState, type ReactNode } from "reac
 import { createRoot } from "react-dom/client";
 import { Company } from "./Company.tsx";
 import { Project } from "./Project.tsx";
+import { Reader } from "./Reader.tsx";
 import { Session } from "./Session.tsx";
 import "./styles.css";
 
@@ -39,6 +40,7 @@ function App() {
   const hash = useHash();
   const session = /^#\/s\/(.+)$/.exec(hash)?.[1];
   const project = /^#\/p\/(.+)$/.exec(hash)?.[1];
+  const doc = /^#\/d\/([^?]+)(\?.*)?$/.exec(hash);
   // Braces matter: newer Chromium returns a Promise from scrollTo, and React would call it as a cleanup.
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -54,7 +56,9 @@ function App() {
       </nav>
       <main className="wrap">
         <ErrorBoundary resetKey={hash}>
-          {session ? (
+          {doc ? (
+            <Reader key={doc[1]} path={decodeURIComponent(doc[1])} fromReady={/[?&]from=ready/.test(doc[2] ?? "")} />
+          ) : session ? (
             <Session id={decodeURIComponent(session)} />
           ) : project ? (
             <Project projectKey={decodeURIComponent(project)} />
