@@ -62,7 +62,7 @@ Campos útiles por línea (una línea = un evento JSON):
 Claude Code avisa cada evento (`SessionStart`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`,
 `PermissionRequest`, `Notification`, `Stop`, `StopFailure`, `SubagentStart/Stop`, `SessionEnd`,
 `TeammateIdle`, `TaskCreated`, `TaskCompleted`…) con un `POST /hooks/<Evento>?t=<token>` a este servidor
-(token en `data/hook-token.txt`; configurados en `~/.claude/settings.json`). El servidor responde siempre
+(token en `data/hook-token.txt`; se instalan en `~/.claude/settings.json` con `npm run hooks -- install`, ver abajo). El servidor responde siempre
 `200 {}` y **solo guarda una lista blanca** de campos (`src/core/hooks.ts`, `sanitizeHook`):
 
 | Campo guardado | Origen |
@@ -93,9 +93,25 @@ symlinks que salgan).
 
 ### 3.3 Respaldo de la DB
 
-Pasados los `cleanupPeriodDays` de Claude Code los JSONL desaparecen; entonces `company-os.db` es el único
-histórico de la actividad y de los hooks. Hay que tratarla como dato, no como caché (el respaldo automático
-de la DB está pendiente de implementar).
+Pasados los `cleanupPeriodDays` de Claude Code los JSONL desaparecen; entonces **`company-os.db` es el único
+histórico** de la actividad y de los hooks (`hook_events`, `hook_state`, `deliverables`). Hay que tratarla como
+dato, no como caché. Al arrancar el servidor y cada 24 h (`src/core/maintenance.ts`):
+
+1. **Respaldo:** `VACUUM INTO` → `data/backups/company-os-AAAA-MM-DD.db` (junto a la DB; un segundo respaldo del mismo
+   día reemplaza al primero). Se conservan los **7** más recientes; otros archivos de esa carpeta no se tocan.
+2. **Poda:** se borran de `hook_events` las filas de más de **30 días** (después del respaldo). `hook_state` y
+   `deliverables` no se podan.
+
+Un fallo de cualquiera de los dos se registra y no detiene el servidor. Para restaurar: detener el servidor y copiar un
+respaldo sobre `data/company-os.db` (borra antes `company-os.db-wal` y `-shm`).
+
+### 3.4 Instalar los hooks
+
+`npm run hooks -- install|uninstall|status [--settings <ruta>]` (`src/core/hook-installer.ts`). Escribe en
+`~/.claude/settings.json` (o en `--settings` / `COMPANY_OS_SETTINGS`) un hook `type: "http"`, `timeout: 2`, con URL
+`http://127.0.0.1:<puerto>/hooks/<Evento>?t=<token>` para 15 eventos. Respaldo único (`settings.json.company-os.backup`, no se
+pisa; sin respaldo no se escribe), escritura atómica (tmp + rename, con verificación de que nadie tocó el archivo), no toca
+hooks ajenos, idempotente, y reemplaza (no duplica) las entradas viejas de Company OS. Adaptado de pixel-agents (MIT).
 
 Riesgo: el formato **no es una API pública** y puede cambiar entre versiones de Claude Code.
 Mitigación: el parser ignora campos desconocidos, guarda `version` de cada evento, y tiene
@@ -283,6 +299,8 @@ Los subagentes sin HAT siguen dibujándose como drones junto a su agente princip
 ## 11. Privacidad y seguridad
 
 - Servidor ligado a `127.0.0.1`, no a la red.
+- `/api/*` y `/hooks/*` rechazan (403) toda petición cuyo `Host` no sea `127.0.0.1:<puerto>` o `localhost:<puerto>`
+  (defensa contra DNS rebinding: una web externa que apunte su dominio a 127.0.0.1 no puede leer la API).
 - El dashboard muestra resúmenes; el contenido completo solo al abrir un evento.
 - Redacción básica en resúmenes: patrones de llaves (`sk-`, `eyJ…`, `SUPABASE_…=`) → `•••`.
 - `company-os.db` en `.gitignore`.
