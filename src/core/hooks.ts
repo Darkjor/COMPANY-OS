@@ -77,7 +77,12 @@ export function sanitizeHook(event: string, payload: unknown): HookRecord | null
 export interface PrevState {
   state: HookState;
   reason: HookReason | null;
+  /** Event that produced the stored state (to ignore a repeated SessionEnd). */
+  event?: string;
 }
+
+/** An ended session that delivered something stays "entregó" this long (or until the human opens it). */
+export const ENDED_DELIVERED_TTL_MS = 48 * 3_600_000;
 
 export interface Transition {
   state: HookState;
@@ -118,9 +123,15 @@ export function transition(rec: HookRecord, prev: PrevState | null, delivered: b
       return { state: "waiting", reason: delivered ? "delivered" : "finished" };
     case "SubagentStop":
       return { state: "done", reason: null };
-    case "SessionStart":
     case "SessionEnd":
-      return { state: "idle", reason: rec.event === "SessionEnd" ? "ended" : null };
+      // Headless (`claude -p`): Stop and SessionEnd arrive milliseconds apart. A session that ends right
+      // after writing a deliverable keeps "entregó" (until seen or ENDED_DELIVERED_TTL_MS); a repeated
+      // SessionEnd must not renew that window.
+      if (prev?.event === "SessionEnd") return null;
+      if (delivered && !rec.agentId) return { state: "waiting", reason: "delivered" };
+      return { state: "idle", reason: "ended" };
+    case "SessionStart":
+      return { state: "idle", reason: null };
     default:
       return null;
   }
@@ -150,8 +161,10 @@ export function recordHook(db: DB, vaultDir: string, rec: HookRecord, ts: string
 
   const agentKey = rec.agentId ? `agent-${rec.agentId}` : "";
   const prevRow = db
-    .prepare("SELECT state, reason, turn_started_at FROM hook_state WHERE session_id = ? AND agent_id = ?")
-    .get(rec.sessionId, agentKey) as { state: HookState; reason: HookReason | null; turn_started_at: string | null } | undefined;
+    .prepare("SELECT state, reason, event, turn_started_at FROM hook_state WHERE session_id = ? AND agent_id = ?")
+    .get(rec.sessionId, agentKey) as
+    | { state: HookState; reason: HookReason | null; event: string; turn_started_at: string | null }
+    | undefined;
 
   // Turn boundary (main agent only): a prompt opens a turn. The first event we ever see for a
   // session also opens one, so "entregó" works when hooks were installed mid-turn.
@@ -159,7 +172,7 @@ export function recordHook(db: DB, vaultDir: string, rec: HookRecord, ts: string
   if (!rec.agentId && rec.event === "UserPromptSubmit") turnStart = ts;
 
   const delivered =
-    rec.event === "Stop" && !rec.agentId && hasDeliverableSince(db, rec.sessionId, turnStart);
+    (rec.event === "Stop" || rec.event === "SessionEnd") && !rec.agentId && hasDeliverableSince(db, rec.sessionId, turnStart);
   const t = transition(rec, prevRow ?? null, delivered);
   if (t) {
     db.prepare(
@@ -204,6 +217,10 @@ export function freshHookState(
   const age = now - Date.parse(h.at);
   if (!Number.isFinite(age)) return null;
   if (agentLastAt && Date.parse(agentLastAt) > Date.parse(h.at) + 120_000) return null;
+  // Ended session that delivered: lives 48 h (the "still unseen" check is the caller's, it has the db).
+  if (h.state === "waiting" && h.event === "SessionEnd") {
+    return age > ENDED_DELIVERED_TTL_MS ? { state: "idle", reason: null } : { state: h.state, reason: h.reason };
+  }
   if (h.state === "waiting") return age > WAITING_TTL_MS ? { state: "idle", reason: null } : { state: h.state, reason: h.reason };
   if (h.state === "working" || h.state === "error") return age > IDLE_AFTER_MS ? null : { state: h.state, reason: h.reason };
   return { state: h.state, reason: h.reason };

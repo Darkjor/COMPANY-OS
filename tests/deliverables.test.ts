@@ -101,16 +101,17 @@ describe("recording", () => {
 });
 
 describe("views", () => {
-  it("title = first H1, else the delivery folder; review only for para-direccion", () => {
+  it("title = first H1, else the delivery folder; review read from the documents", () => {
     const db = openDb(":memory:");
     for (const f of ["informe.md", "notas.md", "para-direccion.md"]) {
       const c = classifyDeliverable(vault, join(dir, f))!;
       recordDeliverable(db, c, "s-1", "2026-10-01T10:00:00Z", "hook");
     }
     const by = Object.fromEntries(listDeliverables(db, vault).map((d) => [d.name, d]));
-    expect(by["informe.md"]).toMatchObject({ title: "Título del informe", review: null, hat: null });
+    expect(by["informe.md"]).toMatchObject({ title: "Título del informe", review: "sin-revisar", reviewPath: null, hat: null });
     expect(by["notas.md"]).toMatchObject({ title: "2026-10-01-algo", type: "otro", review: null });
-    expect(by["para-direccion.md"]).toMatchObject({ title: "Para dirección", review: "aprobado" });
+    // Never assumed: a para-direccion without a "Revisión de calidad" line is unreviewed (QA M1).
+    expect(by["para-direccion.md"]).toMatchObject({ title: "Para dirección", review: "sin-revisar" });
   });
 });
 

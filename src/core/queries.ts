@@ -1,7 +1,7 @@
 import { IDLE_AFTER_MS, WAITING_TTL_MS } from "./config.ts";
 import type { DB } from "./db.ts";
 import { classifySession, type Department } from "./departments.ts";
-import { classifyDeliverable, latestDeliverable, listDeliverables, type Deliverable } from "./deliverables.ts";
+import { classifyDeliverable, hasUnseenDeliverableSince, latestDeliverable, listDeliverables, type Deliverable } from "./deliverables.ts";
 import { freshHookState, hookStates, REASON_LABEL, turnStartOf, type HookReason } from "./hooks.ts";
 import { buildTeam, type TeamConfig, type TeamView } from "./teams.ts";
 import { listDepartmentFiles, resolveProject, type VaultEntry, type VaultProject } from "./vault.ts";
@@ -217,7 +217,12 @@ function buildAgents(db: DB, sessionId: string, tokens: Map<string, Tokens>, now
     }
     const parent = r.spawn_tool_use_id ? (owner.get(r.spawn_tool_use_id) as { agent_id: string } | undefined) : undefined;
     // Official hook signal first (main agent = key '', subagent = 'agent-<id>'); transcript when stale/missing.
-    const hook = freshHookState(hooks.get(r.kind === "main" ? "" : r.id.slice(sessionId.length + 1)), r.last_event_at, now);
+    const hookRow = hooks.get(r.kind === "main" ? "" : r.id.slice(sessionId.length + 1));
+    let hook = freshHookState(hookRow, r.last_event_at, now);
+    // Ended session that delivered: "entregó" lasts until the human opens the deliverable (or 48 h, see freshHookState).
+    if (hook?.state === "waiting" && hookRow?.event === "SessionEnd" && !hasUnseenDeliverableSince(db, sessionId, hookRow.turn_started_at)) {
+      hook = { state: "idle", reason: null };
+    }
     const fromHook = hook !== null && !(finished && r.kind === "subagent");
     return {
       id: r.id,
@@ -228,12 +233,12 @@ function buildAgents(db: DB, sessionId: string, tokens: Map<string, Tokens>, now
       model: r.model,
       parentId: parent?.agent_id ?? (r.kind === "subagent" ? sessionId : null),
       spawnDepth: r.spawn_depth,
-      status: fromHook ? hook.state : deriveStatus(last, r.last_event_at, now, finished, background),
+      status: fromHook && hook ? hook.state : deriveStatus(last, r.last_event_at, now, finished, background),
       current: doing?.summary ?? last?.summary ?? null,
       lastEventAt: r.last_event_at,
       tokens: tokens.get(r.id) ?? ZERO,
       hatDepartment: r.kind === "subagent" && r.agent_type ? hats.get(r.agent_type) ?? null : null,
-      waitingKind: fromHook && hook.state === "waiting" ? hook.reason : null,
+      waitingKind: fromHook && hook?.state === "waiting" ? hook.reason : null,
       source: fromHook ? "hooks" : "transcript",
     };
   });
@@ -260,7 +265,8 @@ function toSessionView(db: DB, row: SessionRow, agents: AgentView[], ctx: Ctx, n
   let status: Status = main?.status ?? "idle";
   let kind: HookReason | null = main?.waitingKind ?? null;
   const source = main?.source ?? "transcript";
-  if (row.automated && status === "waiting") {
+  const endedDelivered = hookStates(db, row.id).get("")?.event === "SessionEnd" && kind === "delivered";
+  if (row.automated && status === "waiting" && !endedDelivered) {
     status = "done";
     kind = null;
     if (main) main.status = "done";

@@ -202,7 +202,7 @@ describe("Stop → 'entregó' when the turn wrote a deliverable", () => {
     expect(s).toMatchObject({ status: "waiting", waitingKind: "delivered", waitingLabel: "entregó" });
     expect(s.deliverable).toMatchObject({
       path: "Proyectos/demo/desarrollo/2026-10-01-x/informe.md", type: "informe", title: "Informe de prueba",
-      at: "2026-09-30T12:00:08Z", hat: "dev-backend", review: null,
+      at: "2026-09-30T12:00:08Z", hat: "dev-backend", review: "sin-revisar", reviewPath: null,
     });
     expect(sessionDetail(db, ctx, SID, 300, NOW)!.deliverables).toHaveLength(1);
 

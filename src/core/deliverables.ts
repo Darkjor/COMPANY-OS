@@ -1,5 +1,6 @@
 import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import type { DB } from "./db.ts";
+import { reviewOf, type ReviewVerdict } from "./review.ts";
 import { readVaultHead } from "./vault.ts";
 
 /**
@@ -20,8 +21,10 @@ export interface Deliverable {
   at: string;
   /** HAT / subagent type that wrote it; null when unknown. */
   hat: string | null;
-  /** "aprobado" for `para-direccion` (it only exists after the reviewer passed); else null — never guessed. */
-  review: "aprobado" | null;
+  /** Read from the documents (see review.ts): para-direccion/informe/plan get a verdict ("sin-revisar" when none); others null. */
+  review: ReviewVerdict | null;
+  /** The review that decides (a `revision-seguimiento.md` wins over its `revision.md`); null when there is none. */
+  reviewPath: string | null;
   name: string;
   project: string;
   department: string;
@@ -120,13 +123,15 @@ function h1(text: string): string | null {
 function toView(r: Row, vaultDir: string): Deliverable {
   const head = readVaultHead(vaultDir, r.path);
   const parent = basename(dirname(r.path));
+  const { review, reviewPath } = reviewOf(vaultDir, r.path, r.type, head);
   return {
     path: r.path,
     type: r.type,
     title: (head ? h1(head) : null) ?? parent,
     at: r.updated_at,
     hat: r.agent_type ?? r.session_hat,
-    review: r.type === "para-direccion" ? "aprobado" : null,
+    review,
+    reviewPath,
     name: basename(r.path),
     project: r.project,
     department: r.department,
@@ -181,4 +186,13 @@ export function latestDeliverable(db: DB, vaultDir: string, sessionId: string, s
 
 export function hasDeliverableSince(db: DB, sessionId: string, since: string | null): boolean {
   return !!db.prepare("SELECT 1 FROM deliverables WHERE session_id = ? AND updated_at >= ? LIMIT 1").get(sessionId, since ?? "");
+}
+
+/** Like hasDeliverableSince, but only deliverables the human has not opened since their last write. */
+export function hasUnseenDeliverableSince(db: DB, sessionId: string, since: string | null): boolean {
+  return !!db
+    .prepare(
+      "SELECT 1 FROM deliverables WHERE session_id = ? AND updated_at >= ? AND (seen_at IS NULL OR seen_at < updated_at) LIMIT 1",
+    )
+    .get(sessionId, since ?? "");
 }
