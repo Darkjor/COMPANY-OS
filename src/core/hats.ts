@@ -15,12 +15,17 @@ export interface Hat {
   department: string | null;
   /** Models this HAT must never run on (e.g. haiku for research, after the 2026-10-01 experiment). */
   forbiddenModels: string[];
+  /** Claude Code subagent keys copied as-is to the agent file (see AGENT_KEYS), canonical casing. */
+  agentFields: [string, string][];
   body: string;
   file: string;
 }
 
 /** Marker that identifies agent files written by Company OS (we never overwrite files without it). */
 export const MANAGED_MARKER = "<!-- company-os:hat";
+
+/** Extra subagent frontmatter keys Claude Code understands (code.claude.com/docs/en/sub-agents), lowercase → canonical. */
+const AGENT_KEYS = new Map(["maxTurns", "effort", "omitClaudeMd", "disallowedTools"].map((k) => [k.toLowerCase(), k]));
 
 const FM = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
 
@@ -45,6 +50,7 @@ export function parseHat(text: string, file: string): Hat | null {
       .split(",")
       .map((x) => x.trim().toLowerCase())
       .filter(Boolean),
+    agentFields: [...AGENT_KEYS].flatMap(([k, canon]) => (fields.get(k) ? [[canon, fields.get(k)!] as [string, string]] : [])),
     body: m[2].trim(),
     file,
   };
@@ -72,6 +78,7 @@ export function toAgentFile(hat: Hat): string {
   const fm = [`name: ${hat.name}`, `description: ${hat.description}`];
   if (hat.model) fm.push(`model: ${hat.model}`);
   if (hat.tools) fm.push(`tools: ${hat.tools}`);
+  for (const [k, v] of hat.agentFields ?? []) fm.push(`${k}: ${v}`);
   return [
     "---",
     ...fm,

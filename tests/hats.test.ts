@@ -79,3 +79,15 @@ describe("installHats", () => {
     expect(hatDepartments(vault).get("estratega-seo")).toBe("marketing");
   });
 });
+
+describe("campos extra de subagente", () => {
+  it("maxTurns, effort y omitClaudeMd pasan al archivo del agente; los propios del vault no", () => {
+    const hat = parseHat("---\nname: x\ndescription: d\nmodel: sonnet\nmaxTurns: 30\neffort: medium\nomitClaudeMd: true\ndepartamento: research\nmodelos_prohibidos: haiku\n---\ncuerpo", "x.md")!;
+    const out = toAgentFile(hat);
+    expect(out).toContain("maxTurns: 30\n");
+    expect(out).toContain("effort: medium\n");
+    expect(out).toContain("omitClaudeMd: true\n");
+    expect(out).not.toContain("departamento:");
+    expect(out).not.toContain("modelos_prohibidos");
+  });
+});

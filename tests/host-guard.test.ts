@@ -57,3 +57,53 @@ describe("proteccion contra DNS rebinding", () => {
     expect(res.status).toBe(403);
   });
 });
+
+describe("acceso remoto (tunel al celular)", () => {
+  let key: string | null = "k".repeat(48);
+  const remote = createApp({ db: openDb(":memory:"), vaultDir: "", ctx: () => ctx, hookToken: "tok", port: 4747, subscribe: () => () => {}, remoteKey: () => key });
+  remote.get("/", (c) => c.text("web"));
+  const TUNNEL = "abc.trycloudflare.com";
+  const req = (path: string, headers: Record<string, string> = {}, init: RequestInit = {}) =>
+    remote.request(`https://${TUNNEL}${path}`, { ...init, headers: { host: TUNNEL, ...headers } });
+
+  it("sin clave: 401 en la web y en la API", async () => {
+    key = "k".repeat(48);
+    expect((await req("/")).status).toBe(401);
+    expect((await req("/api/deliverables")).status).toBe(401);
+    expect((await req("/api/deliverables?k=mala")).status).toBe(401);
+  });
+
+  it("el enlace con ?k= deja una cookie segura y redirige sin la clave", async () => {
+    const res = await req("/?k=" + key + "&x=1");
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("/?x=1");
+    const cookie = res.headers.get("set-cookie") ?? "";
+    expect(cookie).toContain(`cos_key=${key}`);
+    expect(cookie).toMatch(/HttpOnly/i);
+    expect(cookie).toMatch(/Secure/i);
+    expect(cookie).toMatch(/SameSite=Lax/i);
+  });
+
+  it("con la cookie: web, API y POST de 'visto' pasan", async () => {
+    const h = { cookie: `cos_key=${key}` };
+    expect((await req("/", h)).status).toBe(200);
+    expect((await req("/api/deliverables", h)).status).toBe(200);
+    const seen = await req("/api/deliverables/seen", { ...h, "content-type": "application/json" }, { method: "POST", body: JSON.stringify({ path: "x.md" }) });
+    expect(seen.status).toBe(404); // paso el guard; el entregable no existe
+  });
+
+  it("/hooks nunca se abre por el tunel, ni con cookie", async () => {
+    const res = await req("/hooks/Stop?t=tok", { cookie: `cos_key=${key}`, "content-type": "application/json" }, { method: "POST", body: "{}" });
+    expect(res.status).toBe(403);
+  });
+
+  it("al borrar la clave se corta el acceso aunque la cookie siga", async () => {
+    key = null;
+    expect((await req("/api/deliverables", { cookie: "cos_key=" + "k".repeat(48) })).status).toBe(403);
+    key = "k".repeat(48);
+  });
+
+  it("el Host local no necesita clave", async () => {
+    expect((await remote.request("http://127.0.0.1:4747/api/deliverables", { headers: { host: "127.0.0.1:4747" } })).status).toBe(200);
+  });
+});

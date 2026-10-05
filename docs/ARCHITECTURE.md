@@ -315,6 +315,15 @@ El observador lee el mapa HAT → departamento: un subagente cuyo `agentType` es
 la estación de ese departamento (con sombrero), aunque su sesión padre sea de otro departamento.
 Los subagentes sin HAT siguen dibujándose como drones junto a su agente principal.
 
+### Tope de llamadas (hecho cumplir)
+
+El hook HTTP `PreToolUse` responde con `permissionDecision: "deny"` cuando un subagente pasa su tope
+(`src/core/caps.ts`): cuenta sus `PreToolUse` en `hook_events`; el tope sale de `Tope: N llamadas` al
+inicio del prompt del Agent o, si no, del HAT. A 5 del final avisa por `additionalContext`; pasado el
+tope deja 5 Write/Edit y nunca niega `SubagentHandback`. La sesión principal no se limita. Respaldo
+nativo: `maxTurns` en el frontmatter del HAT (`npm run hats` copia `maxTurns`, `effort`,
+`omitClaudeMd` y `disallowedTools`).
+
 ## 11. Privacidad y seguridad
 
 - Servidor ligado a `127.0.0.1`, no a la red.
@@ -323,6 +332,11 @@ Los subagentes sin HAT siguen dibujándose como drones junto a su agente princip
 - El dashboard muestra resúmenes; el contenido completo solo al abrir un evento.
 - Redacción básica en resúmenes: patrones de llaves (`sk-`, `eyJ…`, `SUPABASE_…=`) → `•••`.
 - `company-os.db` en `.gitignore`.
+
+- **Acceso remoto (celular), apagado por defecto.** Si existe `data/remote-key.txt`, un Host que no
+  sea local (un túnel) puede entrar con la clave: llega una vez como `?k=` en el enlace, se guarda
+  en una cookie HttpOnly/Secure/SameSite=Lax y se quita de la URL. `/hooks` nunca se abre fuera de la
+  máquina. Borrar el archivo corta el acceso en ≤5 s. El túnel en sí no está automatizado: lo levanta el dueño.
 
 ## 12. Fases
 

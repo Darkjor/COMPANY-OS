@@ -11,6 +11,7 @@ import { startMaintenance } from "../core/maintenance.ts";
 import { loadDepartments } from "../core/departments.ts";
 import { hatDepartments, hatToolCaps } from "../core/hats.ts";
 import { type Ctx } from "../core/queries.ts";
+import { remoteKeyReader } from "../core/remote.ts";
 import { loadTeams } from "../core/teams.ts";
 import { loadVaultProjects } from "../core/vault.ts";
 import { createApp, type Listener } from "./app.ts";
@@ -61,6 +62,7 @@ const app = createApp({
   ctx,
   hookToken,
   port: PORT,
+  remoteKey: remoteKeyReader(),
   notify,
   subscribe: (l) => {
     listeners.add(l);

@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import type { DB } from "../core/db.ts";
 import { listDeliverables, markSeen } from "../core/deliverables.ts";
+import { capDecision } from "../core/caps.ts";
 import { recordHook, sanitizeHook } from "../core/hooks.ts";
 import { log } from "../core/log.ts";
 import { overview, projectDetail, sessionDetail, type Ctx } from "../core/queries.ts";
@@ -24,6 +25,8 @@ export interface AppDeps {
   subscribe: (l: Listener) => () => void;
   /** Notify listeners that these sessions changed (a hook arrived). */
   notify?: Listener;
+  /** Clave del acceso remoto (tunel al celular); null = apagado. Ver core/remote.ts. */
+  remoteKey?: () => string | null;
   /** Raw hook payload log — debugging only (COMPANY_OS_HOOK_DEBUG=1). Null/undefined = off. */
   rawHookLog?: { file: string; maxBytes: number } | null;
 }
@@ -65,9 +68,9 @@ export function createApp(deps: AppDeps): Hono {
   const { db, vaultDir } = deps;
   const app = new Hono();
 
-  // Antes que cualquier ruta: rechaza Host ajeno (DNS rebinding). El resto (web estatica) no expone datos.
-  app.use("/api/*", hostGuard(deps.port));
-  app.use("/hooks/*", hostGuard(deps.port));
+  // Antes que cualquier ruta (incluida la web estatica que main.ts agrega despues): Host ajeno = DNS
+  // rebinding o el tunel del celular; este ultimo solo pasa con la clave remota.
+  app.use("*", hostGuard(deps.port, deps.remoteKey));
 
   app.get("/api/overview", (c) => {
     const days = Number(c.req.query("days") ?? 30);
@@ -108,6 +111,12 @@ export function createApp(deps: AppDeps): Hono {
       try {
         const sessionId = recordHook(db, vaultDir, rec, receivedAt); // not inside notify?.(): optional calls skip their arguments
         deps.notify?.([sessionId]);
+        // Tope de llamadas por subagente (core/caps.ts): la respuesta del hook puede negar la llamada.
+        const decision = capDecision(db, rec, deps.ctx().toolCaps);
+        if (decision) {
+          if (decision.hookSpecificOutput.permissionDecision === "deny") log.warn(`tope: ${rec.agentType ?? "?"} ${rec.agentId} → ${rec.toolName ?? "?"} negada`);
+          return c.json(decision);
+        }
       } catch (err) {
         log.warn(`no se pudo guardar el hook ${rec.event}: ${String(err)}`);
       }
