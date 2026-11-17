@@ -179,11 +179,12 @@ a.seat { position: relative; }
   padding: 2px 6px; background: var(--bg); color: var(--muted); box-shadow: inset 0 0 0 1px var(--line-strong);
 }
 .station-live .plate { color: var(--text); box-shadow: inset 0 0 0 1px var(--work); }
-.station-seats { display: flex; flex-wrap: wrap; gap: 18px 10px; align-items: flex-end; }
+/* top-aligned so a seat's roster grows downward without lifting its desk; empty seats make up their shorter figure */
+.station-seats { display: flex; flex-wrap: wrap; gap: 18px 10px; align-items: flex-start; }
 .seat { display: flex; flex-direction: column; align-items: center; width: 132px; max-width: 100%; }
 .seat-figure { position: relative; display: flex; align-items: flex-end; justify-content: center; height: 64px; padding-left: 20px; margin-bottom: -24px; }
 .seat .desk-sprite { position: relative; z-index: 1; }
-.seat-empty .seat-figure { height: 44px; }
+.seat-empty .seat-figure { height: 44px; margin-top: 20px; }
 .seat-empty { opacity: 0.55; }
 .seat-caption {
   margin-top: 6px; max-width: 100%; font-family: var(--mono); font-size: 11px; color: var(--muted);
@@ -196,6 +197,21 @@ a.seat { position: relative; }
 .seat-error .seat-caption { color: var(--error); }
 a.seat:hover .seat-caption { color: var(--text); }
 .seat-hat { font-family: var(--pixel); font-size: 9px; color: var(--text); }
+.seat-roster {
+  margin-top: 6px; width: 100%; display: flex; flex-direction: column; gap: 2px;
+  padding-top: 5px; border-top: 1px dashed var(--line);
+  font-family: var(--mono); font-size: 10.5px; color: var(--muted);
+}
+.roster-item { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.roster-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.roster-dot { flex: none; width: 5px; height: 5px; background: var(--idle); }
+.roster-working .roster-dot, .roster-subagents .roster-dot { background: var(--work); }
+.roster-working { color: var(--text); }
+.roster-waiting .roster-dot { background: var(--call); }
+.roster-error .roster-dot { background: var(--error); }
+.roster-done, .roster-idle { color: var(--dim); }
+.roster-more { color: var(--dim); padding-left: 10px; }
+a.seat:hover .seat-roster { color: var(--text); }
 .overflow { font-family: var(--pixel); font-size: 11px; color: var(--muted); align-self: center; }
 
 /* sprites */

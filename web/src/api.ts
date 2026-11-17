@@ -26,6 +26,9 @@ export interface SessionView {
   hat: { name: string; department: string } | null;
   crew: CrewMember[];
   drones: number;
+  /** Absent on servers that predate the roster. */
+  roster?: RosterAgent[];
+  subagents?: number;
   /** Only with status "waiting". Absent on servers that predate hooks. */
   waitingKind?: WaitingKind | null;
   deliverable?: Deliverable | null;
@@ -74,6 +77,11 @@ export interface Deliverable {
   sessionId: string | null;
   createdAt: string;
   seenAt: string | null;
+}
+
+export interface RosterAgent extends Pick<CrewMember, "id" | "status" | "model" | "current"> {
+  label: string;
+  hat: string | null;
 }
 
 export interface CrewMember {

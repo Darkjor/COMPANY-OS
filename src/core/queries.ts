@@ -59,6 +59,13 @@ export interface CrewMember {
   current: string | null;
 }
 
+/** A subagent as listed under its parent's seat in the office (active first, then the latest finished). */
+export interface RosterAgent extends Pick<CrewMember, "id" | "status" | "model" | "current"> {
+  /** HAT name, else the agent's name, else the task description, else the agent type. */
+  label: string;
+  hat: string | null;
+}
+
 export interface SessionView {
   id: string;
   title: string | null;
@@ -79,6 +86,9 @@ export interface SessionView {
   crew: CrewMember[];
   /** Live subagents without a HAT (drawn as drones next to the main agent). */
   drones: number;
+  /** The session's subagents for the office seat (at most ROSTER_MAX); `subagents` counts every one eligible for it. */
+  roster: RosterAgent[];
+  subagents: number;
   /** With status "waiting": permission | question | finished | delivered. Null otherwise. */
   waitingKind: "permission" | "question" | "finished" | "delivered" | null;
   /** Spanish label for `waitingKind` ("pide permiso", "te pregunta", "terminó", "entregó"). */
@@ -303,12 +313,39 @@ function toSessionView(db: DB, row: SessionRow, agents: AgentView[], ctx: Ctx, n
         id: a.id, hat: a.agentType ?? "hat", department: a.hatDepartment!, status: a.status, model: a.model, current: a.current,
       })),
     drones: subs.filter((a) => !a.hatDepartment && a.status === "working").length,
+    ...rosterOf(subs, now),
     waitingKind,
     waitingLabel: waitingKind ? REASON_LABEL[waitingKind] : null,
     statusSource: source,
     deliverable,
     team: teamCfg ? buildTeam(db, teamCfg, row.id, agents, ctx.hats, now) : null,
   };
+}
+
+const ROSTER_MAX = 6;
+/** Finished subagents stay on the seat this long after their last event. */
+const ROSTER_KEEP_MS = 2 * 60 * 60 * 1000;
+
+/** Doing something right now: working, or blocked on the user. A stale error or a finished turn is not. */
+function isActive(a: AgentView): boolean {
+  return a.status === "working" || a.status === "subagents" || (a.status === "waiting" && (a.waitingKind === "permission" || a.waitingKind === "question"));
+}
+
+export function rosterOf(subs: AgentView[], now = Date.now()): { roster: RosterAgent[]; subagents: number } {
+  const at = (a: AgentView) => (a.lastEventAt ? Date.parse(a.lastEventAt) : 0);
+  const eligible = subs.filter((a) => isActive(a) || now - at(a) <= ROSTER_KEEP_MS);
+  const roster = eligible
+    .sort((a, b) => Number(isActive(b)) - Number(isActive(a)) || at(b) - at(a))
+    .slice(0, ROSTER_MAX)
+    .map((a) => ({
+      id: a.id,
+      label: (a.hatDepartment ? a.agentType : null) ?? a.name ?? a.description ?? a.agentType ?? "subagente",
+      hat: a.hatDepartment ? a.agentType : null,
+      status: a.status,
+      model: a.model,
+      current: a.current,
+    }));
+  return { roster, subagents: eligible.length };
 }
 
 function summarizeDepartments(sessions: SessionView[], departments: Department[]): DeptSummary[] {

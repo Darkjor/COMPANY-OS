@@ -1,4 +1,4 @@
-import { deliverableHref, isLocallySeen, sessionHref, useSeenVersion, type CrewMember, type DeptSummary, type SessionView, type Status, type TeamMember } from "./api.ts";
+import { deliverableHref, isLocallySeen, sessionHref, useSeenVersion, type CrewMember, type DeptSummary, type RosterAgent, type SessionView, type Status, type TeamMember } from "./api.ts";
 import { STATUS_LABEL, plural, timeAgo } from "./format.ts";
 import { Desk, Drone, Worker } from "./pixel/Sprites.tsx";
 import { reviewText } from "./ReviewBadge.tsx";
@@ -66,6 +66,23 @@ function TipBody({ s, signal, now, deptName }: { s: SessionView; signal: Signal 
   );
 }
 
+/** The session's subagents listed under its seat, so you see who each Claude has without opening it. */
+function Roster({ agents, total }: { agents: RosterAgent[]; total: number }) {
+  const shown = agents.slice(0, 4);
+  const more = total - shown.length;
+  return (
+    <span className="seat-roster" role="list" aria-label={plural(total, "subagente", "subagentes")}>
+      {shown.map((a) => (
+        <span key={a.id} role="listitem" className={`roster-item roster-${a.status}`} aria-label={`${a.label}, ${STATUS_LABEL[a.status]}`}>
+          <span className="roster-dot" aria-hidden />
+          <span className="roster-label">{a.hat ? HAT_LABEL(a.hat) : a.label}</span>
+        </span>
+      ))}
+      {more > 0 && <span role="listitem" className="roster-more">+{more}</span>}
+    </span>
+  );
+}
+
 function Seat({ s, now, deptName, tag }: { s: SessionView; now: number; deptName?: string; tag?: Tag }) {
   const status: Status = s.status === "subagents" ? "working" : s.status;
   const drones = Math.min(s.drones, 4);
@@ -112,6 +129,7 @@ function Seat({ s, now, deptName, tag }: { s: SessionView; now: number; deptName
         <span className="seat-caption">
           {s.hat && <span className="seat-hat">{s.hat.name}</span>} {caption(s, now, signal)}
         </span>
+        {s.roster && s.roster.length > 0 && <Roster agents={s.roster} total={s.subagents ?? s.roster.length} />}
       </a>
       {tip}
     </>

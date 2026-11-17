@@ -74,6 +74,14 @@ describe("background subagents", () => {
     expect(s.crew).toEqual([expect.objectContaining({ hat: "dev-backend", status: "working" })]);
   });
 
+  it("the seat roster lists the session's subagents, finished ones included", () => {
+    const live = session(fixture({ background: true, lastAt: "2026-10-01T17:00:30Z" }), NOW).s;
+    expect(live.subagents).toBe(1);
+    expect(live.roster).toEqual([expect.objectContaining({ label: "dev-backend", hat: "dev-backend", status: "working" })]);
+    const done = session(fixture({ background: false, lastAt: "2026-10-01T17:00:30Z" }), NOW).s;
+    expect(done.roster).toEqual([expect.objectContaining({ label: "dev-backend", status: "done" })]);
+  });
+
   it("a foreground subagent still finishes when its tool_result arrives", () => {
     const { s } = session(fixture({ background: false, lastAt: "2026-10-01T17:00:30Z" }), NOW);
     expect(s.crew).toEqual([]);
